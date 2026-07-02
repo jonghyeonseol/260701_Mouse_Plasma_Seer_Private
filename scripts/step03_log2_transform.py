@@ -38,18 +38,23 @@ def boxplot_by_sample(df, sample_cols, meta, group_order, out, name, title, *,
     all_vals = np.concatenate([d for d in data if d.size > 0]) if data else np.array([])
     if all_vals.size:
         ax.axhline(float(np.nanmedian(all_vals)), color="#888", lw=0.6, ls="--")
+    # Reserve headroom so the group sub-labels sit INSIDE the axes, below the
+    # title (which is lifted with pad) — avoids title/subtitle overlap.
+    ymin, ymax = ax.get_ylim()
+    ax.set_ylim(ymin, ymax + (ymax - ymin) * 0.10)
+    ylabel_y = ymax + (ymax - ymin) * 0.015
     grp_seq = list(ordered_meta["group"])
     start, prev = 0, None
     for i, g in enumerate(grp_seq):
         if prev is not None and g != prev:
             ax.axvline(i + 0.5, color="#bbb", lw=0.7)
-            ax.text((start + i) / 2 + 1, ax.get_ylim()[1], config.GROUP_DISPLAY.get(prev, prev),
+            ax.text((start + i) / 2 + 1, ylabel_y, config.GROUP_DISPLAY.get(prev, prev),
                     ha="center", va="bottom", fontsize=8, color="#333", weight="bold")
             start = i
         prev = g
-    ax.text((start + n - 1) / 2 + 1, ax.get_ylim()[1], config.GROUP_DISPLAY.get(prev, prev),
+    ax.text((start + n - 1) / 2 + 1, ylabel_y, config.GROUP_DISPLAY.get(prev, prev),
             ha="center", va="bottom", fontsize=8, color="#333", weight="bold")
-    ax.set_title(title)
+    ax.set_title(title, pad=26)
     utils.save_fig(fig, out, name)
     plt.close(fig)
 

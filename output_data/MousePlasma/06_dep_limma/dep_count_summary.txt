@@ -10,9 +10,15 @@ model: ~0 + group + peptide_ug
          WT_10W_vs_8W      time_course    WT_10W    WT_8W      7899    14      60             74
          WT_12W_vs_8W      time_course    WT_12W    WT_8W      7899   169     292            461
          WT_14W_vs_8W      time_course    WT_14W    WT_8W      7899    81     167            248
+        WT_12W_vs_10W      time_course    WT_12W   WT_10W      7899   179      55            234
+        WT_14W_vs_10W      time_course    WT_14W   WT_10W      7899    32      20             52
+        WT_14W_vs_12W      time_course    WT_14W   WT_12W      7899    75     210            285
          KI_10W_vs_8W      time_course    KI_10W    KI_8W      7899    78     105            183
          KI_12W_vs_8W      time_course    KI_12W    KI_8W      7899   139     161            300
          KI_14W_vs_8W      time_course    KI_14W    KI_8W      7899    42      68            110
+        KI_12W_vs_10W      time_course    KI_12W   KI_10W      7899   670     376           1046
+        KI_14W_vs_10W      time_course    KI_14W   KI_10W      7899    32      99            131
+        KI_14W_vs_12W      time_course    KI_14W   KI_12W      7899    46     238            284
 interaction_10W_vs_8W      interaction KI-WT@10W KI-WT@8W      7899   273      65            338
 interaction_12W_vs_8W      interaction KI-WT@12W KI-WT@8W      7899    75      22             97
 interaction_14W_vs_8W      interaction KI-WT@14W KI-WT@8W      7899    76      39            115

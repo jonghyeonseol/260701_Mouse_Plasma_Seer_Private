@@ -11,8 +11,9 @@ Steps:
     04 normalize (reference-ratio + median)
     05 impute (MinProb)
     06 DEP via limma (14 contrasts, ~0 + group + peptide_ug)
-    07 dimensionality reduction (PCA / t-SNE / UMAP)
-    08 hierarchical clustering analysis (samples + features)
+    07 dimensionality reduction (PCA / t-SNE / UMAP)  [integrated module]
+    08 hierarchical clustering analysis (samples + features)  [integrated module]
+    10 pairwise 2-group analysis (PCA/t-SNE/UMAP + top-DEP heatmap per pair)
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ import step05_impute as s5
 import step06_dep_limma as s6
 import step07_dim_reduction as s7
 import step08_clustering as s8
+import step10_pairwise as s10
 
 
 def _save_snapshot():
@@ -65,7 +67,7 @@ def run_dataset(dataset: str):
     logger = utils.setup_logger(dataset)
     logger.info(f"=== START pipeline {dataset} ===")
     state = s1.run(dataset, logger)
-    for step in (s2, s3, s4, s5, s6, s7, s8):
+    for step in (s2, s3, s4, s5, s6, s7, s8, s10):
         state = step.run(dataset, logger, state)
     logger.info(f"=== END pipeline {dataset} ===")
     return state

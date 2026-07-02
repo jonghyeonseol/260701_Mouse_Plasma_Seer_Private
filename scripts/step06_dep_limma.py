@@ -161,8 +161,8 @@ def _count_bar(summary, out, fig_mirror):
             shutil.copy(src, os.path.join(fig_mirror, os.path.basename(src)))
 
 
-def _family_volcano_grid(comparisons, results, family, out, fig_mirror):
-    comps = [c for c in comparisons if c["family"] == family]
+def _volcano_grid(comps, results, label, out, fig_mirror):
+    """Volcano grid for an explicit list of contrasts (kept ≤6 wide for legibility)."""
     if not comps:
         return
     utils.apply_style()
@@ -184,8 +184,8 @@ def _family_volcano_grid(comparisons, results, family, out, fig_mirror):
         ax.set_xlabel(f"log2FC ({comp['case_grp']}/{comp['ctrl_grp']})", fontsize=10)
         ax.set_ylabel(f"-log10({'raw p' if config.SIG_PVALUE_COL == 'P.Value' else 'adj.p'})")
         ax.set_title(f"{comp['name']}\n↑{int(up.sum())} / ↓{int(dn.sum())}", fontsize=10)
-    fig.suptitle(f"Volcano grid — {family}", y=1.02, fontsize=13, fontweight="semibold")
-    png = utils.save_fig(fig, out, f"volcano_grid_{family}", tight=False)
+    fig.suptitle(f"Volcano grid — {label}", y=1.02, fontsize=13, fontweight="semibold")
+    png = utils.save_fig(fig, out, f"volcano_grid_{label}", tight=False)
     plt.close(fig)
     for ext in (".png", ".svg"):
         src = png.replace(".png", ext)
@@ -193,29 +193,92 @@ def _family_volcano_grid(comparisons, results, family, out, fig_mirror):
             shutil.copy(src, os.path.join(fig_mirror, os.path.basename(src)))
 
 
-def _genotype_time_upset(comparisons, results, out, fig_mirror):
+def _upset(comps, results, label, title, out, fig_mirror, strip_prefix=""):
+    """UpSet of DEP-set intersections for an explicit list of contrasts."""
     try:
         from upsetplot import UpSet, from_contents
     except Exception:
         return
     contents = {}
-    for comp in [c for c in comparisons if c["family"] == "genotype_at_time"]:
+    for comp in comps:
         res = results[comp["name"]]
-        contents[comp["name"].replace("KI_vs_WT_", "")] = \
-            res.loc[res["Significant"], config.ID_COL].astype(str).tolist()
+        key = comp["name"].replace(strip_prefix, "") if strip_prefix else comp["name"]
+        contents[key] = res.loc[res["Significant"], config.ID_COL].astype(str).tolist()
     if not any(contents.values()):
         return
     data = from_contents(contents)
-    fig = plt.figure(figsize=(9, 5.5))
-    UpSet(data, subset_size="count", show_counts=True, sort_by="cardinality").plot(fig=fig)
-    fig.suptitle("KI-vs-WT DEP overlap across timepoints (UpSet)", y=1.02,
-                 fontsize=12, fontweight="semibold")
-    png = utils.save_fig(fig, out, "dep_upset_genotype_at_time", tight=False)
+    fig = plt.figure(figsize=(max(9, 1.1 * len(comps) + 4), 5.5))
+    UpSet(data, subset_size="count", show_counts=True, sort_by="cardinality",
+          min_subset_size=1).plot(fig=fig)
+    fig.suptitle(title, y=1.02, fontsize=12, fontweight="semibold")
+    png = utils.save_fig(fig, out, f"dep_upset_{label}", tight=False)
     plt.close(fig)
     for ext in (".png", ".svg"):
         src = png.replace(".png", ext)
         if os.path.exists(src):
             shutil.copy(src, os.path.join(fig_mirror, os.path.basename(src)))
+
+
+def _dep_union_overview(comparisons, results, out, fig_mirror, logger):
+    """Total-DEP overview across all contrasts: per-protein recurrence table +
+    a bar of union DEP size per family and overall unique union."""
+    families = ["genotype_at_time", "time_course", "interaction", "global"]
+    # Per-protein: in how many contrasts / which families it is a DEP.
+    rec = {}
+    fam_sets = {f: set() for f in families}
+    for comp in comparisons:
+        res = results[comp["name"]]
+        for pid, lab in zip(res.loc[res["Significant"], config.ID_COL].astype(str),
+                            res.loc[res["Significant"], "label"]):
+            r = rec.setdefault(pid, {"label": lab, "n_contrasts": 0,
+                                     "families": set(), "contrasts": []})
+            r["n_contrasts"] += 1
+            r["families"].add(comp["family"])
+            r["contrasts"].append(comp["name"])
+            fam_sets[comp["family"]].add(pid)
+    rows = [{config.ID_COL: pid, "label": r["label"], "n_contrasts": r["n_contrasts"],
+             "n_families": len(r["families"]),
+             "families": ";".join(sorted(r["families"])),
+             "contrasts": ";".join(r["contrasts"])}
+            for pid, r in rec.items()]
+    overview = pd.DataFrame(rows).sort_values(
+        ["n_contrasts", "n_families"], ascending=False) if rows else pd.DataFrame(
+        columns=[config.ID_COL, "label", "n_contrasts", "n_families", "families", "contrasts"])
+    utils.save_tsv(overview, out, "dep_union_overview")
+
+    total_union = len(rec)
+    utils.apply_style()
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    # (a) union DEP size per family (+ overall unique union)
+    labels = families + ["ALL (unique)"]
+    vals = [len(fam_sets[f]) for f in families] + [total_union]
+    colors = ["#6A51A3", "#2171B5", "#238B45", "#CB181D", "#333333"]
+    axes[0].bar(labels, vals, color=colors, edgecolor="black", linewidth=0.4)
+    for i, v in enumerate(vals):
+        axes[0].text(i, v, f"{v}", ha="center", va="bottom", fontsize=9)
+    axes[0].set_ylabel("Unique DEP proteins")
+    axes[0].set_title("Union DEP size per family")
+    axes[0].tick_params(axis="x", rotation=25)
+    # (b) DEP recurrence: how many proteins are DEP in exactly k contrasts
+    if not overview.empty:
+        rc = overview["n_contrasts"].value_counts().sort_index()
+        axes[1].bar(rc.index, rc.values, color="#0072B2", edgecolor="black", linewidth=0.4)
+        axes[1].set_xlabel("# contrasts a protein is a DEP in")
+        axes[1].set_ylabel("Protein count")
+        axes[1].set_title("DEP recurrence across contrasts")
+        axes[1].set_xticks(range(1, int(rc.index.max()) + 1))
+    fig.suptitle(f"Total DEP overview — {total_union} unique DEP proteins "
+                 f"across {len(comparisons)} contrasts",
+                 y=1.03, fontsize=13, fontweight="semibold")
+    png = utils.save_fig(fig, out, "dep_union_overview", tight=False)
+    plt.close(fig)
+    for ext in (".png", ".svg"):
+        src = png.replace(".png", ext)
+        if os.path.exists(src):
+            shutil.copy(src, os.path.join(fig_mirror, os.path.basename(src)))
+    logger.info(f"[step06] union overview: {total_union} unique DEP proteins; "
+                f"per-family unique = "
+                f"{ {f: len(fam_sets[f]) for f in families} }.")
 
 
 def run(dataset: str, logger, state: dict) -> dict:
@@ -245,9 +308,31 @@ def run(dataset: str, logger, state: dict) -> dict:
 
     summary = _master_summary(comparisons, results, out)
     _count_bar(summary, out, fig_mirror)
-    for fam in ["genotype_at_time", "time_course", "interaction"]:
-        _family_volcano_grid(comparisons, results, fam, out, fig_mirror)
-    _genotype_time_upset(comparisons, results, out, fig_mirror)
+
+    # Volcano grids: genotype_at_time (4) and interaction (3) as single grids;
+    # time_course (12) split per genotype so each grid stays ≤6 panels wide.
+    gat = [c for c in comparisons if c["family"] == "genotype_at_time"]
+    inter = [c for c in comparisons if c["family"] == "interaction"]
+    tc_wt = [c for c in comparisons if c["family"] == "time_course"
+             and c["case_grp"].startswith("WT")]
+    tc_ki = [c for c in comparisons if c["family"] == "time_course"
+             and c["case_grp"].startswith("KI")]
+    _volcano_grid(gat, results, "genotype_at_time", out, fig_mirror)
+    _volcano_grid(inter, results, "interaction", out, fig_mirror)
+    _volcano_grid(tc_wt, results, "time_course_WT", out, fig_mirror)
+    _volcano_grid(tc_ki, results, "time_course_KI", out, fig_mirror)
+
+    # Per-family UpSets (total-DEP overview).
+    _upset(gat, results, "genotype_at_time",
+           "KI-vs-WT DEP overlap across timepoints", out, fig_mirror,
+           strip_prefix="KI_vs_WT_")
+    _upset(tc_wt, results, "time_course_WT",
+           "WT time-course DEP overlap (pairwise)", out, fig_mirror,
+           strip_prefix="WT_")
+    _upset(tc_ki, results, "time_course_KI",
+           "KI time-course DEP overlap (pairwise)", out, fig_mirror,
+           strip_prefix="KI_")
+    _dep_union_overview(comparisons, results, out, fig_mirror, logger)
 
     # Global KI-vs-WT DEP heatmap across all 8 groups.
     plot_dep_heatmap(df, meta, results["KI_vs_WT_global"], output_dir=out,

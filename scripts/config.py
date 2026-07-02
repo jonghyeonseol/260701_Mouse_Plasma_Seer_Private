@@ -48,6 +48,8 @@ STEP_DIRS = {
     "06_dep_limma":        "06_dep_limma",
     "07_dim_reduction":    "07_dim_reduction",
     "08_clustering":       "08_clustering",
+    "09_trend_timeseries": "09_trend_timeseries",
+    "10_pairwise":         "10_pairwise",
     "figures":             "figures",
 }
 
@@ -98,17 +100,21 @@ GROUP_COLORS = dict(PLASMA_GROUP_COLORS)
 GENOTYPE_COLORS = {"WT": "#AFDCEC", "KI": "#FF4040"}
 TIMEPOINT_COLORS = {8: "#440154", 10: "#31688E", 12: "#35B779", 14: "#FDE725"}
 
-# Diverging z-score colormap for expression heatmaps: WT-blue → white → KI-red.
-ZSCORE_COLORS = ["#AFDCEC", "#FFFFFF", "#FF4040"]
+# Diverging z-score colormap for expression heatmaps: softened green → black → red
+# (classic microarray palette; black midpoint at z≈0).
+ZSCORE_COLORS = ["#00C800", "#000000", "#E00000"]
 
 # Direction colors for DEP / volcano / heatmap row annotations.
 DIRECTION_COLORS = {"Up": "#C0392B", "Down": "#1F77B4", "NS": "#BDBDBD"}
 
-# ── DEP contrast specification (4 analysis goals → 14 contrasts) ──────────────
+# ── DEP contrast specification (4 analysis goals → 20 contrasts) ──────────────
 # Each contrast is expressed in terms of the 8 group means so a single limma
 # means-model fit (~0 + group [+ peptide]) yields every comparison via
 # makeContrasts.  case_grp / ctrl_grp drive volcano axis labels and the sign
 # convention (positive logFC = higher in case).
+import itertools as _it
+
+
 def _mk(name, expr, case, ctrl, family):
     return {"name": name, "expr": expr, "case_grp": case,
             "ctrl_grp": ctrl, "family": family}
@@ -120,14 +126,14 @@ for _t in TIMEPOINTS:
     COMPARISONS.append(_mk(
         f"KI_vs_WT_{_t}W", f"KI_{_t}W - WT_{_t}W",
         f"KI_{_t}W", f"WT_{_t}W", "genotype_at_time"))
-# Goal 2 — within-genotype time course vs 8W baseline (6)
+# Goal 2 — within-genotype time course, ALL pairwise timepoints (12).
+# Convention: later timepoint = case, earlier = ctrl (positive logFC = increase
+# over time).  6 ordered pairs per genotype (8-10, 8-12, 8-14, 10-12, 10-14, 12-14).
 for _g in GENOTYPES:
-    for _t in TIMEPOINTS:
-        if _t == TIME_BASELINE:
-            continue
+    for _earlier, _later in _it.combinations(TIMEPOINTS, 2):
         COMPARISONS.append(_mk(
-            f"{_g}_{_t}W_vs_{TIME_BASELINE}W", f"{_g}_{_t}W - {_g}_{TIME_BASELINE}W",
-            f"{_g}_{_t}W", f"{_g}_{TIME_BASELINE}W", "time_course"))
+            f"{_g}_{_later}W_vs_{_earlier}W", f"{_g}_{_later}W - {_g}_{_earlier}W",
+            f"{_g}_{_later}W", f"{_g}_{_earlier}W", "time_course"))
 # Goal 3 — genotype × time interaction, each time vs 8W baseline (3)
 for _t in TIMEPOINTS:
     if _t == TIME_BASELINE:
@@ -201,7 +207,21 @@ FIGSIZE_VOLCANO = (8.5, 7.0)
 
 HEATMAP_ZSCORE_RANGE = (-3, 3)
 
-# ── Dataset registry (single dataset; mirrors reference structure) ───────────
+# ── Trend / time-series analysis (branch step09) ─────────────────────────────
+TREND_N_CLUSTERS = 6          # fuzzy c-means clusters for temporal profiles
+TREND_FUZZIFIER = 1.5         # c-means fuzzifier m (Mfuzz-style soft membership)
+TREND_SEED = 42
+TREND_CORE_MEMBERSHIP = 0.5   # membership ≥ this = "core" cluster member
+
+# ── Dataset registry: main (all 8 groups) + per-genotype branches ────────────
+# Branch datasets subset to one genotype's 4 timepoint groups (+ pooled ref for
+# normalization); the 50% valid-fraction filter is therefore re-applied within
+# the subset.  dimred_axes / annotation_axes drive which design axes the
+# dim-reduction colours and the clustermap annotation strips use.
+_branch_groups = {g: [f"{g}_{t}W" for t in TIMEPOINTS] for g in GENOTYPES}
+_branch_colors = {g: {grp: PLASMA_GROUP_COLORS[grp] for grp in _branch_groups[g]}
+                  for g in GENOTYPES}
+
 DATASETS = {
     "MousePlasma": {
         "input":          PLASMA_INPUT,
@@ -212,5 +232,24 @@ DATASETS = {
         "normalize_method": NORMALIZE_METHOD,
         "comparisons":    COMPARISONS,
         "group_colors":   PLASMA_GROUP_COLORS,
+        "genotype":       None,                # full cohort
+        "timepoints":     TIMEPOINTS,
+        "dimred_axes":    ["genotype", "timepoint", "group"],
+        "annotation_axes": ["Genotype", "Timepoint", "Group"],
     },
 }
+for _g in GENOTYPES:
+    DATASETS[f"MousePlasma_{_g}"] = {
+        "input":          PLASMA_INPUT,
+        "sample_info":    SAMPLE_INFO_XLSX,
+        "output_root":    os.path.join(OUTPUT_DIR, f"MousePlasma_{_g}"),
+        "meta_cols":      PLASMA_META_COLS,
+        "group_order":    _branch_groups[_g],
+        "normalize_method": NORMALIZE_METHOD,
+        "comparisons":    [],                  # no DEP in branch projects
+        "group_colors":   _branch_colors[_g],
+        "genotype":       _g,                  # subset selector
+        "timepoints":     TIMEPOINTS,
+        "dimred_axes":    ["timepoint"],       # genotype is constant in a branch
+        "annotation_axes": ["Timepoint"],
+    }

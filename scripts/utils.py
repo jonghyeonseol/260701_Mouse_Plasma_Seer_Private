@@ -110,14 +110,39 @@ def heatmap_col_colors(bio: pd.DataFrame, sample_ids: list[str],
 
 
 def zscore_cmap():
-    """Diverging colormap for expression z-scores: WT-blue → white → KI-red."""
+    """Diverging colormap for expression z-scores (config.ZSCORE_COLORS)."""
     from matplotlib.colors import LinearSegmentedColormap
-    return LinearSegmentedColormap.from_list("wt_ki_z", config.ZSCORE_COLORS)
+    return LinearSegmentedColormap.from_list("z_gbr", config.ZSCORE_COLORS)
+
+
+def compute_embeddings(X: np.ndarray, seed: int = config.RANDOM_SEED, n_pcs: int = 10):
+    """Standardize (per feature) then compute PCA + t-SNE + UMAP embeddings.
+
+    X is samples × features.  Sample-count-adaptive t-SNE perplexity and UMAP
+    neighbours so the same helper serves the full cohort (step07) and small
+    2-group pairwise subsets (step10).  Returns a dict of embeddings + PCA
+    variance-explained (%) + the perplexity used.
+    """
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.decomposition import PCA
+    from sklearn.manifold import TSNE
+    import umap
+    Xs = StandardScaler().fit_transform(X)
+    n = Xs.shape[0]
+    pca = PCA(n_components=min(n_pcs, n - 1), random_state=seed)
+    pcs = pca.fit_transform(Xs)
+    var = pca.explained_variance_ratio_ * 100
+    perp = max(5, min(30, (n - 1) // 3))
+    tsne = TSNE(n_components=2, perplexity=perp, init="pca",
+                random_state=seed, learning_rate="auto").fit_transform(Xs)
+    umap_emb = umap.UMAP(n_neighbors=min(15, n - 1), min_dist=0.3,
+                         random_state=seed).fit_transform(Xs)
+    return {"pcs": pcs, "var": var, "tsne": tsne, "umap": umap_emb, "perplexity": perp}
 
 
 def add_heatmap_annotation_legends(clustergrid, which=("Genotype", "Timepoint", "Group"),
-                                   x: float = 1.04, cbar_pos=(0.02, 0.82, 0.02, 0.14),
-                                   cbar_title: str = "Row z-score"):
+                                   x: float = 1.04, cbar_pos=(0.015, 0.905, 0.018, 0.065),
+                                   cbar_title: str = "Row z-score", group_subset=None):
     """Place stacked, titled annotation legends to the RIGHT of a seaborn
     clustermap (one per annotation strip) and move the colorbar to a clean
     top-left slot, so nothing overlaps the dendrogram, labels or colour bar.
@@ -126,11 +151,11 @@ def add_heatmap_annotation_legends(clustergrid, which=("Genotype", "Timepoint", 
     """
     from matplotlib.patches import Patch
     from matplotlib.legend import Legend
+    group_list = group_subset if group_subset else config.PLASMA_GROUP_ORDER
     specs = {
         "Genotype": [(gt, config.GENOTYPE_COLORS[gt]) for gt in config.GENOTYPES],
         "Timepoint": [(f"{t}W", config.TIMEPOINT_COLORS[t]) for t in config.TIMEPOINTS],
-        "Group": [(config.GROUP_DISPLAY[g], config.GROUP_COLORS[g])
-                  for g in config.PLASMA_GROUP_ORDER],
+        "Group": [(config.GROUP_DISPLAY[g], config.GROUP_COLORS[g]) for g in group_list],
     }
     # Vertical anchor (axes-fraction top) per legend; sized so the 8-row Group
     # legend has room beneath the shorter Genotype/Timepoint legends.
@@ -153,6 +178,17 @@ def add_heatmap_annotation_legends(clustergrid, which=("Genotype", "Timepoint", 
     # Returned so callers can pass them to savefig(bbox_extra_artists=...) — a
     # tight bbox otherwise clips legends anchored outside the heatmap axes.
     return legends
+
+
+def set_clustermap_title(clustergrid, title: str):
+    """Place a clustermap title above the column dendrogram (reliably visible on
+    tall clustermaps, where a figure suptitle can fall outside the tight bbox).
+    Returns the title artist so it can be added to savefig's extra_artists."""
+    if getattr(clustergrid, "ax_col_dendrogram", None) is not None:
+        clustergrid.ax_col_dendrogram.set_title(
+            title, fontsize=config.TITLE_SIZE, pad=12, fontweight="semibold")
+        return clustergrid.ax_col_dendrogram.title
+    return clustergrid.fig.suptitle(title, y=1.02, fontsize=config.TITLE_SIZE)
 
 
 def save_clustermap(clustergrid, out_dir: str, name: str, extra_artists=None):
@@ -331,6 +367,26 @@ def load_raw(dataset: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         df = df.drop(columns=drop_cols)
     meta = get_sample_metadata(dataset, df)
     return df, meta
+
+
+def subset_by_genotype(df: pd.DataFrame, meta: pd.DataFrame, genotype: str
+                       ) -> tuple[pd.DataFrame, pd.DataFrame, list[str], str | None]:
+    """Subset the full matrix/metadata to one genotype's biological samples,
+    keeping the pooled-ref column (needed for reference-ratio normalization).
+
+    Returns (sub_df, sub_meta, sample_cols, ref_col) — a state analogous to
+    step01's output, ready to feed step02 onward for a branch project.
+    """
+    bio = meta[(~meta["is_ref"]) & (meta["genotype"] == genotype)].copy()
+    ref = meta[meta["is_ref"]].copy()
+    sub_meta = pd.concat([bio, ref], ignore_index=True)
+    sample_cols = bio["column_name"].tolist()
+    ref_col = ref["column_name"].iloc[0] if len(ref) else None
+
+    meta_cols = [c for c in config.PLASMA_META_COLS if c in df.columns]
+    keep = meta_cols + sample_cols + ([ref_col] if ref_col else [])
+    sub_df = df[keep].copy()
+    return sub_df, sub_meta, sample_cols, ref_col
 
 
 def to_numeric_intensity(df: pd.DataFrame, sample_cols: list[str]) -> pd.DataFrame:

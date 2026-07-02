@@ -35,16 +35,16 @@ def _mirror(png, fig_mirror):
             shutil.copy(src, os.path.join(fig_mirror, os.path.basename(src)))
 
 
-def _color_spec(axis: str, meta_bio: pd.DataFrame):
+def _color_spec(axis: str, meta_bio: pd.DataFrame, cfg: dict):
     """Return (value_series, color_map, legend_order, title)."""
     if axis == "genotype":
         return (meta_bio["genotype"], config.GENOTYPE_COLORS,
                 config.GENOTYPES, "Genotype")
     if axis == "timepoint":
         return (meta_bio["timepoint"].astype(int), config.TIMEPOINT_COLORS,
-                config.TIMEPOINTS, "Timepoint (weeks)")
+                cfg["timepoints"], "Timepoint (weeks)")
     return (meta_bio["group"], config.GROUP_COLORS,
-            config.PLASMA_GROUP_ORDER, "Group")
+            cfg["group_order"], "Group")
 
 
 def _scatter(ax, emb, values, cmap, legend_order, xlab, ylab, title):
@@ -60,6 +60,7 @@ def _scatter(ax, emb, values, cmap, legend_order, xlab, ylab, title):
 
 
 def run(dataset: str, logger, state: dict) -> dict:
+    cfg = config.DATASETS[dataset]
     out = utils.step_path(dataset, "07_dim_reduction")
     fig_mirror = utils.figures_dir(dataset)
     utils.apply_style()
@@ -67,28 +68,13 @@ def run(dataset: str, logger, state: dict) -> dict:
     matrix = state["data_df"]
     meta = state["meta"]
     bio = meta[~meta["is_ref"]].copy()
-    bio = bio[bio["group"].isin(config.PLASMA_GROUP_ORDER)].reset_index(drop=True)
+    bio = bio[bio["group"].isin(cfg["group_order"])].reset_index(drop=True)
     sample_cols = bio["column_name"].tolist()
 
     X = matrix[sample_cols].values.T.astype(float)
-    Xs = StandardScaler().fit_transform(X)
-
-    # PCA
-    pca = PCA(n_components=min(10, Xs.shape[0] - 1), random_state=config.RANDOM_SEED)
-    pcs = pca.fit_transform(Xs)
-    var = pca.explained_variance_ratio_ * 100
-
-    # t-SNE
-    perp = max(5, min(30, (len(sample_cols) - 1) // 3))
-    tsne = TSNE(n_components=2, perplexity=perp, init="pca",
-                random_state=config.RANDOM_SEED, learning_rate="auto")
-    tsne_emb = tsne.fit_transform(Xs)
-
-    # UMAP
-    import umap
-    reducer = umap.UMAP(n_neighbors=min(15, len(sample_cols) - 1), min_dist=0.3,
-                        random_state=config.RANDOM_SEED)
-    umap_emb = reducer.fit_transform(Xs)
+    emb = utils.compute_embeddings(X)
+    pcs, var, tsne_emb, umap_emb, perp = (emb["pcs"], emb["var"], emb["tsne"],
+                                          emb["umap"], emb["perplexity"])
 
     base = bio[["sample_id", "group", "genotype", "timepoint"]].reset_index(drop=True)
     for name, emb, cols in [
@@ -117,10 +103,11 @@ def run(dataset: str, logger, state: dict) -> dict:
     plt.close(fig)
 
     # Per-axis 1×3 (method) figures
-    for axis in ["genotype", "timepoint", "group"]:
-        values, cmap, order, title = _color_spec(axis, bio)
-        fig, axes = plt.subplots(1, 3, figsize=(16, 5.2))
-        for ax, (mname, emb, xl, yl) in zip(axes, embeddings):
+    axes_list = cfg.get("dimred_axes", ["genotype", "timepoint", "group"])
+    for axis in axes_list:
+        values, cmap, order, title = _color_spec(axis, bio, cfg)
+        fig, axs = plt.subplots(1, 3, figsize=(16, 5.2))
+        for ax, (mname, emb, xl, yl) in zip(axs, embeddings):
             _scatter(ax, emb, values, cmap, order, xl, yl, mname)
         handles = [Patch(color=cmap.get(v, "#888"),
                          label=config.GROUP_DISPLAY.get(v, str(v)) if isinstance(v, str)
@@ -133,11 +120,12 @@ def run(dataset: str, logger, state: dict) -> dict:
         _mirror(utils.save_fig(fig, out, f"dimreduction_by_{axis}", tight=False), fig_mirror)
         plt.close(fig)
 
-    # Combined 3 methods × 3 axes grid
-    fig, axes = plt.subplots(3, 3, figsize=(16, 15))
+    # Combined 3 methods × N axes grid (N = number of design axes for this dataset)
+    ncol = len(axes_list)
+    fig, axes = plt.subplots(3, ncol, figsize=(5.3 * ncol + 0.5, 15), squeeze=False)
     for r, (mname, emb, xl, yl) in enumerate(embeddings):
-        for c, axis in enumerate(["genotype", "timepoint", "group"]):
-            values, cmap, order, title = _color_spec(axis, bio)
+        for c, axis in enumerate(axes_list):
+            values, cmap, order, title = _color_spec(axis, bio, cfg)
             ax = axes[r, c]
             _scatter(ax, emb, values, cmap, order, xl, yl,
                      f"{mname} · {title}" if r == 0 else mname)

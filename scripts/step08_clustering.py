@@ -54,10 +54,11 @@ def _purity(clusters, labels) -> float:
     return float(correct / len(df))
 
 
-def _sample_correlation_clustermap(X, sample_ids, bio, out, fig_mirror, logger):
+def _sample_correlation_clustermap(X, sample_ids, bio, out, fig_mirror, logger,
+                                   annotation_axes):
     """Pearson-correlation clustermap across samples."""
     corr = np.corrcoef(X)              # samples × samples
-    col_colors = utils.heatmap_col_colors(bio, sample_ids)
+    col_colors = utils.heatmap_col_colors(bio, sample_ids, which=annotation_axes)
     link = linkage(pdist(X, metric="euclidean"), method=LINK_METHOD)
     g = sns.clustermap(
         pd.DataFrame(corr, index=sample_ids, columns=sample_ids),
@@ -65,20 +66,21 @@ def _sample_correlation_clustermap(X, sample_ids, bio, out, fig_mirror, logger):
         cmap="magma", figsize=(15.5, 13),
         row_colors=col_colors, col_colors=col_colors,
         xticklabels=False, yticklabels=(len(sample_ids) <= 90),
-        cbar_kws=dict(label="Pearson r"), dendrogram_ratio=(0.12, 0.12),
+        cbar_kws=dict(label=""), dendrogram_ratio=(0.12, 0.12),
         colors_ratio=0.018, linewidths=0)
     g.ax_heatmap.set_yticklabels(g.ax_heatmap.get_yticklabels(), fontsize=6)
-    g.fig.suptitle("Sample–sample correlation (hierarchical clustering, Ward)",
-                   y=1.02, fontsize=config.TITLE_SIZE)
+    t = utils.set_clustermap_title(g, "Sample–sample correlation (hierarchical clustering, Ward)")
     # Row tick-labels shown → push legends further right to avoid overlap.
-    legs = utils.add_heatmap_annotation_legends(g, x=1.16, cbar_title="Pearson r")
-    png = utils.save_clustermap(g, out, "sample_correlation_clustermap", extra_artists=legs)
+    legs = utils.add_heatmap_annotation_legends(g, which=annotation_axes, x=1.16,
+                                                cbar_title="Pearson r")
+    png = utils.save_clustermap(g, out, "sample_correlation_clustermap",
+                                extra_artists=legs + [t])
     plt.close(g.fig)
     _mirror(png, fig_mirror)
     return link
 
 
-def _sample_dendrogram(link, sample_ids, bio, out, fig_mirror):
+def _sample_dendrogram(link, sample_ids, bio, out, fig_mirror, group_order):
     m = bio.set_index("sample_id")
     utils.apply_style()
     fig, ax = plt.subplots(figsize=(max(12, 0.16 * len(sample_ids) + 3), 6.5))
@@ -86,13 +88,13 @@ def _sample_dendrogram(link, sample_ids, bio, out, fig_mirror):
                     above_threshold_color="#555555", leaf_font_size=6)
     ax.set_ylabel(f"Ward distance")
     ax.set_title("Sample hierarchical clustering dendrogram")
-    # Colour leaf labels by group; add genotype/timepoint strip below.
+    # Colour leaf labels by group.
     for lbl in ax.get_xticklabels():
         s = lbl.get_text()
         lbl.set_color(config.GROUP_COLORS.get(m.loc[s, "group"], "#333"))
         lbl.set_rotation(90)
     handles = [Patch(color=config.GROUP_COLORS[g], label=config.GROUP_DISPLAY[g])
-               for g in config.PLASMA_GROUP_ORDER]
+               for g in group_order]
     ax.legend(handles=handles, loc="upper right", ncol=2, fontsize=7,
               frameon=False, title="Group (leaf colour)")
     png = utils.save_fig(fig, out, "sample_dendrogram", tight=True)
@@ -101,50 +103,58 @@ def _sample_dendrogram(link, sample_ids, bio, out, fig_mirror):
     return dn
 
 
-def _cluster_agreement(link, bio, sample_ids, out, logger):
+def _cluster_agreement(link, bio, sample_ids, out, logger, group_order):
+    """ARI/purity of hierarchical clusters vs design labels.  Adapts to the
+    dataset: the genotype axis is only scored when >1 genotype is present
+    (branch projects hold a single genotype)."""
     m = bio.set_index("sample_id")
     genotype = [m.loc[s, "genotype"] for s in sample_ids]
     timepoint = [int(m.loc[s, "timepoint"]) for s in sample_ids]
     group = [m.loc[s, "group"] for s in sample_ids]
 
+    # Factors to score (skip genotype if constant).
+    factors = {"timepoint": timepoint, "group": group}
+    if len(set(genotype)) > 1:
+        factors["genotype"] = genotype
+
+    n_tp = len(set(timepoint))
+    n_grp = len(group_order)
+    ks = sorted(set([2, n_tp, n_grp]))
+
     rows = {"sample_id": sample_ids, "genotype": genotype,
             "timepoint": timepoint, "group": group}
     lines = ["Hierarchical clustering vs known design labels (Ward linkage)\n"]
-    for k in (2, 4, 8):
+    for k in ks:
         cl = fcluster(link, t=k, criterion="maxclust")
         rows[f"cluster_k{k}"] = cl
-        ari_g = adjusted_rand_score(genotype, cl)
-        ari_t = adjusted_rand_score(timepoint, cl)
-        ari_grp = adjusted_rand_score(group, cl)
-        pur_g = _purity(cl, genotype)
-        pur_t = _purity(cl, timepoint)
-        lines.append(f"k={k}: ARI(genotype)={ari_g:.3f}, ARI(timepoint)={ari_t:.3f}, "
-                     f"ARI(group)={ari_grp:.3f} | purity(genotype)={pur_g:.3f}, "
-                     f"purity(timepoint)={pur_t:.3f}")
+        parts = [f"ARI({name})={adjusted_rand_score(lab, cl):.3f}"
+                 for name, lab in factors.items()]
+        parts += [f"purity({name})={_purity(cl, lab):.3f}"
+                  for name, lab in factors.items()]
+        lines.append(f"k={k}: " + ", ".join(parts))
     assign = pd.DataFrame(rows)
     utils.save_tsv(assign, out, "sample_cluster_assignments")
     with open(os.path.join(out, "cluster_label_agreement.txt"), "w") as f:
         f.write("\n".join(lines) + "\n\n")
-        # Cross-tabs at the natural k for each factor.
-        cl2 = assign["cluster_k2"]
-        cl4 = assign["cluster_k4"]
-        f.write("Cross-tab k=2 vs genotype:\n")
-        f.write(pd.crosstab(cl2, assign["genotype"]).to_string() + "\n\n")
-        f.write("Cross-tab k=4 vs timepoint:\n")
-        f.write(pd.crosstab(cl4, assign["timepoint"]).to_string() + "\n")
+        kt = n_tp if f"cluster_k{n_tp}" in assign.columns else ks[-1]
+        f.write(f"Cross-tab k={kt} vs timepoint:\n")
+        f.write(pd.crosstab(assign[f"cluster_k{kt}"], assign["timepoint"]).to_string() + "\n")
+        if "genotype" in factors:
+            f.write("\nCross-tab k=2 vs genotype:\n")
+            f.write(pd.crosstab(assign["cluster_k2"], assign["genotype"]).to_string() + "\n")
     logger.info("[step08] " + " | ".join(lines[1:]))
     return assign
 
 
 def _feature_clustermap_topvar(matrix, bio, sample_ids, sample_cols, out, fig_mirror,
-                               top_n=500):
+                               annotation_axes, top_n=500):
     var = matrix[sample_cols].var(axis=1).values
     idx = np.argsort(-var)[:min(top_n, len(var))]
     sub = matrix.iloc[idx]
     mat = sub[sample_cols].values.astype(float)
     z = np.clip((mat - mat.mean(axis=1, keepdims=True)) /
                 (mat.std(axis=1, keepdims=True, ddof=0) + 1e-9), -3, 3)
-    col_colors = utils.heatmap_col_colors(bio, sample_ids)
+    col_colors = utils.heatmap_col_colors(bio, sample_ids, which=annotation_axes)
     row_link = linkage(pdist(z, metric="correlation"), method="average")
     col_link = linkage(pdist(z.T, metric="euclidean"), method=LINK_METHOD)
     g = sns.clustermap(
@@ -153,17 +163,17 @@ def _feature_clustermap_topvar(matrix, bio, sample_ids, sample_cols, out, fig_mi
         cmap=utils.zscore_cmap(), vmin=-3, vmax=3, center=0,
         col_colors=col_colors, figsize=(15.5, 12),
         xticklabels=False, yticklabels=False,
-        cbar_kws=dict(label="Row z-score"), dendrogram_ratio=(0.10, 0.12),
+        cbar_kws=dict(label=""), dendrogram_ratio=(0.10, 0.12),
         colors_ratio=0.02, linewidths=0)
-    g.fig.suptitle(f"Top-{len(idx)} variable proteins — hierarchical clustering",
-                   y=1.02, fontsize=config.TITLE_SIZE)
-    legs = utils.add_heatmap_annotation_legends(g, x=1.04)
-    png = utils.save_clustermap(g, out, "feature_clustermap_topvar", extra_artists=legs)
+    t = utils.set_clustermap_title(g, f"Top-{len(idx)} variable proteins — hierarchical clustering")
+    legs = utils.add_heatmap_annotation_legends(g, which=annotation_axes, x=1.04)
+    png = utils.save_clustermap(g, out, "feature_clustermap_topvar", extra_artists=legs + [t])
     plt.close(g.fig)
     _mirror(png, fig_mirror)
 
 
-def _union_dep_heatmap(matrix, meta, deps_by_comparison, out, fig_mirror, logger):
+def _union_dep_heatmap(matrix, meta, deps_by_comparison, out, fig_mirror, logger,
+                       group_order, annotation_axes):
     seen, rows = set(), []
     for name, res in deps_by_comparison.items():
         for _, r in res[res["Significant"]].iterrows():
@@ -179,13 +189,13 @@ def _union_dep_heatmap(matrix, meta, deps_by_comparison, out, fig_mirror, logger
 
     bio = meta[~meta["is_ref"]]
     ordered_cols, ordered_meta = utils.ordered_bio_cols(meta, matrix.columns.tolist(),
-                                                        config.PLASMA_GROUP_ORDER)
+                                                        group_order)
     sub = matrix[matrix[config.ID_COL].isin(union[config.ID_COL])]
     mat = sub[ordered_cols].values.astype(float)
     z = np.clip((mat - mat.mean(axis=1, keepdims=True)) /
                 (mat.std(axis=1, keepdims=True, ddof=0) + 1e-9), -3, 3)
     sample_ids = ordered_meta["sample_id"].tolist()
-    col_colors = utils.heatmap_col_colors(bio, sample_ids)
+    col_colors = utils.heatmap_col_colors(bio, sample_ids, which=annotation_axes)
     row_link = linkage(pdist(z, metric="correlation"), method="average")
     g = sns.clustermap(
         pd.DataFrame(z, columns=sample_ids),
@@ -193,18 +203,21 @@ def _union_dep_heatmap(matrix, meta, deps_by_comparison, out, fig_mirror, logger
         cmap=utils.zscore_cmap(), vmin=-3, vmax=3, center=0,
         col_colors=col_colors, figsize=(15.5, 12),
         xticklabels=False, yticklabels=False,
-        cbar_kws=dict(label="Row z-score"), dendrogram_ratio=(0.10, 0.12),
+        cbar_kws=dict(label=""), dendrogram_ratio=(0.10, 0.12),
         colors_ratio=0.02, linewidths=0)
-    g.fig.suptitle(f"Union DEPs across all contrasts (n={len(union)}) — "
-                   f"hierarchical clustering", y=1.02, fontsize=config.TITLE_SIZE)
-    legs = utils.add_heatmap_annotation_legends(g, x=1.04)
-    png = utils.save_clustermap(g, out, "heatmap_union_deps", extra_artists=legs)
+    t = utils.set_clustermap_title(
+        g, f"Union DEPs across all contrasts (n={len(union)}) — hierarchical clustering")
+    legs = utils.add_heatmap_annotation_legends(g, which=annotation_axes, x=1.04)
+    png = utils.save_clustermap(g, out, "heatmap_union_deps", extra_artists=legs + [t])
     plt.close(g.fig)
     _mirror(png, fig_mirror)
     logger.info(f"[step08] union DEP heatmap: {len(union)} proteins.")
 
 
 def run(dataset: str, logger, state: dict) -> dict:
+    cfg = config.DATASETS[dataset]
+    group_order = cfg["group_order"]
+    annotation_axes = cfg.get("annotation_axes", ["Genotype", "Timepoint", "Group"])
     out = utils.step_path(dataset, "08_clustering")
     fig_mirror = utils.figures_dir(dataset)
     utils.apply_style()
@@ -212,7 +225,7 @@ def run(dataset: str, logger, state: dict) -> dict:
     matrix = state["data_df"]
     meta = state["meta"]
     bio = meta[~meta["is_ref"]].copy()
-    bio = bio[bio["group"].isin(config.PLASMA_GROUP_ORDER)].reset_index(drop=True)
+    bio = bio[bio["group"].isin(group_order)].reset_index(drop=True)
     sample_cols = bio["column_name"].tolist()
     sample_ids = bio["sample_id"].tolist()
     X = matrix[sample_cols].values.T.astype(float)   # samples × proteins
@@ -220,12 +233,14 @@ def run(dataset: str, logger, state: dict) -> dict:
     logger.info(f"[step08] {dataset}: hierarchical clustering of {len(sample_ids)} "
                 f"samples × {matrix.shape[0]} proteins (Ward).")
 
-    link = _sample_correlation_clustermap(X, sample_ids, bio, out, fig_mirror, logger)
-    _sample_dendrogram(link, sample_ids, bio, out, fig_mirror)
-    _cluster_agreement(link, bio, sample_ids, out, logger)
-    _feature_clustermap_topvar(matrix, bio, sample_ids, sample_cols, out, fig_mirror)
+    link = _sample_correlation_clustermap(X, sample_ids, bio, out, fig_mirror, logger,
+                                          annotation_axes)
+    _sample_dendrogram(link, sample_ids, bio, out, fig_mirror, group_order)
+    _cluster_agreement(link, bio, sample_ids, out, logger, group_order)
+    _feature_clustermap_topvar(matrix, bio, sample_ids, sample_cols, out, fig_mirror,
+                               annotation_axes)
     _union_dep_heatmap(matrix, meta, state.get("deps_by_comparison", {}), out,
-                       fig_mirror, logger)
+                       fig_mirror, logger, group_order, annotation_axes)
 
     return state
 

@@ -1,0 +1,17 @@
+[14:54:42] INFO — Logger initialized for dataset='MousePlasma_WT' -> /Users/seoljonghyeon/Documents/GitHub/260701_Mouse_Plasma_Seer_Private/output_data/_shared/logs/run_20260702_145442_MousePlasma_WT.log
+[14:54:42] INFO — === START branch pipeline MousePlasma_WT ===
+[14:54:42] INFO — [branch:MousePlasma_WT] subset genotype=WT: 9769 proteins × 40 samples (+1 pooled ref).
+[14:54:43] INFO — [step02] MousePlasma_WT: 9769 → 8113 proteins (removed 1656).
+[14:54:44] INFO — [step03] MousePlasma_WT: log2 transform applied (n_proteins=8113, n_bio_samples=40).
+[14:54:44] INFO — [step04] MousePlasma_WT: reference-ratio applied; 8019 proteins used pooled ref, 94 used row-mean fallback (ref missing).
+[14:54:45] INFO — [step04] MousePlasma_WT: normalized (ref-ratio + median); pooled-ref column dropped.
+[14:54:45] INFO — [step05] MousePlasma_WT: missing before = 15516/324520 (4.8%)
+[14:54:46] INFO — [step05] MousePlasma_WT: imputed 15516 values (MinProb downshift=1.8, width=0.3).
+[14:54:53] INFO — [step07] MousePlasma_WT: PCA (PC1=32.2%, PC2=12.2%), t-SNE (perplexity=13), UMAP done for 40 samples.
+[14:54:53] INFO — [step08] MousePlasma_WT: hierarchical clustering of 40 samples × 8113 proteins (Ward).
+[14:54:54] INFO — [step08] k=2: ARI(timepoint)=0.042, ARI(group)=0.042, purity(timepoint)=0.375, purity(group)=0.375 | k=4: ARI(timepoint)=0.056, ARI(group)=0.056, purity(timepoint)=0.425, purity(group)=0.425
+[14:54:55] WARNING — [step08] no DEPs to build union heatmap.
+[14:55:01] INFO — [step09] MousePlasma_WT: 6 temporal clusters; sizes=[1715, 1355, 1139, 1402, 1595, 907], core proteins=7424.
+[14:55:02] INFO — [step09] limma linear-week trend fit (peptide covariate=True).
+[14:55:04] INFO — [step09] MousePlasma_WT: monotonic trend — 258 increasing, 617 decreasing (limma week raw p<0.05).
+[14:55:04] INFO — === END branch pipeline MousePlasma_WT ===

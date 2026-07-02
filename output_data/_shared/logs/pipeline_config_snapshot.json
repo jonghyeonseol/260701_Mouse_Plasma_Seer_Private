@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-07-01T15:53:37.446562",
+  "timestamp": "2026-07-02T14:51:30.461447",
   "VALID_FRACTION": 0.5,
   "VALID_FRACTION_MODE": "all",
   "NORMALIZE_METHOD": "ref_ratio_median",
@@ -57,6 +57,21 @@
       "family": "time_course"
     },
     {
+      "name": "WT_12W_vs_10W",
+      "expr": "WT_12W - WT_10W",
+      "family": "time_course"
+    },
+    {
+      "name": "WT_14W_vs_10W",
+      "expr": "WT_14W - WT_10W",
+      "family": "time_course"
+    },
+    {
+      "name": "WT_14W_vs_12W",
+      "expr": "WT_14W - WT_12W",
+      "family": "time_course"
+    },
+    {
       "name": "KI_10W_vs_8W",
       "expr": "KI_10W - KI_8W",
       "family": "time_course"
@@ -69,6 +84,21 @@
     {
       "name": "KI_14W_vs_8W",
       "expr": "KI_14W - KI_8W",
+      "family": "time_course"
+    },
+    {
+      "name": "KI_12W_vs_10W",
+      "expr": "KI_12W - KI_10W",
+      "family": "time_course"
+    },
+    {
+      "name": "KI_14W_vs_10W",
+      "expr": "KI_14W - KI_10W",
+      "family": "time_course"
+    },
+    {
+      "name": "KI_14W_vs_12W",
+      "expr": "KI_14W - KI_12W",
       "family": "time_course"
     },
     {
