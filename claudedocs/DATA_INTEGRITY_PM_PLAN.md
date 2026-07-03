@@ -2,8 +2,15 @@
 
 **Owner:** Project maintainer (jonghyeonseol)
 **Prepared by:** PM Agent meta-layer review
-**Date:** 2026-07-04
+**Date:** 2026-07-04 (Phase A status confirmed 2026-07-04)
 **Related:** `claudedocs/DATA_INTEGRITY_REPORT.md` (technical findings this plan acts on)
+
+## Status log
+
+| Date | Update |
+|---|---|
+| 2026-07-04 | Plan created. Phases B/C/D not yet started. |
+| 2026-07-04 | **Phase A confirmed PENDING** — maintainer has **not yet** contacted the core facility (KBSI) for the LC-MS run log. Request draft added below (§4, Phase A) so this can move to "sent" as soon as it goes out. |
 
 ## 1. Objective
 
@@ -21,8 +28,8 @@ recurring cadence, ownership) and turns the one-off audit into a durable process
 | Cross-step integrity + metadata join | ✅ Closed — 17/17 |
 | Analytical layer (DEP/pairwise/trend) | ✅ Closed — 24/24 |
 | Implementation-independent practical audit | ✅ Closed — 17/17 |
-| **Sample-pair anomaly (`10W_KI8` vs `14W_WT10`, r=0.9966)** | 🟡 **Open** — plate/report-order checked, no adjacency found; true LC-MS run-order record does not exist in this repo |
-| Governance / recurring re-verification | ❌ **Not established** — verification has so far been a one-time manual audit |
+| **Sample-pair anomaly (`10W_KI8` vs `14W_WT10`, r=0.9966)** | 🟡 **Open — Phase A PENDING (not yet requested)**. Plate/report-order checked from existing files, no adjacency found; true LC-MS run-order record does not exist in this repo and has not yet been requested from the core facility. |
+| Governance / recurring re-verification | ❌ **Not established** — verification has so far been a one-time manual audit; Phases B–D not started |
 
 ## 3. Gap analysis — what "achieved" actually requires
 
@@ -43,9 +50,16 @@ recurring cadence, ownership) and turns the one-off audit into a durable process
 ## 4. Action plan
 
 ### Phase A — Close the evidentiary gap (owner: maintainer, target: next data delivery cycle)
-- [ ] Request the LC-MS acquisition log / autosampler injection queue for the
-      `20260529` batch from the core facility (KBSI), specifically covering
-      wells **F5** (`10W_KI8`) and **F9** (`14W_WT10`).
+**Status: 🔴 PENDING — not yet initiated (confirmed with maintainer 2026-07-04).**
+No request has been sent to the core facility. Nothing in this phase can be
+marked done until that happens — the checklist below is unchanged in intent,
+only its status is now accurately tracked instead of implied.
+
+- [ ] **Request the LC-MS acquisition log / autosampler injection queue** for
+      the `20260529` batch from the core facility (KBSI), specifically
+      covering wells **F5** (`10W_KI8`) and **F9** (`14W_WT10`). A ready-to-send
+      draft is in **§4a** below — copy it in, attach/send, then flip this item
+      to "sent (date)".
 - [ ] If the log confirms non-adjacent, non-sequential injection → **downgrade
       the flag to "resolved, coincidental similarity"** in
       `DATA_INTEGRITY_REPORT.md`.
@@ -56,6 +70,35 @@ recurring cadence, ownership) and turns the one-off audit into a durable process
 - [ ] Either outcome: append a dated resolution note to §5 of the integrity
       report (do not delete the original finding — audit trail matters more
       than a clean-looking report).
+
+#### §4a. Ready-to-send request draft
+
+> **Subject:** Run-order/plate-map confirmation request — batch 20260529 (wells F5, F9)
+>
+> Hi [core facility contact],
+>
+> While QC-reviewing the SEER Proteograph results from the `20260529` mouse
+> plasma batch, we found that two samples — **well F5** (`10week KI8`) and
+> **well F9** (`14week WT10`) — have the highest pairwise proteome correlation
+> in the entire batch (Pearson r = 0.997, out of 3,240 sample pairs), despite
+> being different genotype and different timepoint groups.
+>
+> Before we finalize the analysis, could you confirm from the instrument
+> records:
+> 1. The LC-MS injection order for this batch (were F5 and F9 injected
+>    adjacently or with any temporal proximity?).
+> 2. Whether any carryover, mis-injection, or autosampler flag was logged
+>    around either injection.
+> 3. Whether the physical plate loading matches our records (F5 = `10week
+>    KI8`, F9 = `14week WT10`) — i.e. no relabeling occurred between plate
+>    preparation and injection.
+>
+> This is a routine QC check, not an indication of a known problem — we just
+> want to rule out a run-order or labeling artifact before treating these two
+> samples as fully independent in downstream comparisons.
+>
+> Thanks,
+> [name]
 
 ### Phase B — Make re-verification automatic, not manual (owner: maintainer, target: 1 week)
 - [ ] Add a `tests/run_all.sh` (or Makefile target) that runs all 5
