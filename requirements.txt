@@ -16,6 +16,6 @@ upsetplot>=0.9
 # Dimensionality reduction
 umap-learn>=0.5
 
-# R bridge for limma DEP analysis
+# R bridge for limma DEP analysis + trend heatmap (ComplexHeatmap)
 rpy2>=3.5
-# (R packages required: limma — via Bioconductor)
+# (R packages required: limma (Bioconductor), ComplexHeatmap (Bioconductor), circlize)
