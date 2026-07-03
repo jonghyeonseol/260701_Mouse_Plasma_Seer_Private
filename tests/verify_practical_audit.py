@@ -20,6 +20,14 @@ RAW_TSV = "input_data/20260630_142950_20260529_Report.tsv"
 XLSX = "input_data/plasma_sample_information.xlsx"
 MAIN = "output_data/MousePlasma"
 
+# Last-verified checksum of RAW_TSV (recorded in claudedocs/DATA_INTEGRITY_REPORT.md,
+# 2026-07-03 audit). A mismatch means the raw input changed WITHOUT the pipeline
+# being re-run and re-verified against it (PM plan Phase D). If the input has
+# legitimately changed (new data delivery), re-run scripts/run_pipeline.py +
+# scripts/run_branch.py + this whole suite, THEN update this constant in the
+# same commit as the regenerated outputs — never update it silently.
+EXPECTED_RAW_SHA256 = "9e42b3a0ce44ad85624bf26fedf884123d2048360530bdf3723f3d08a9a90c15"
+
 results, flags = [], []
 def check(name, cond, detail=""):
     results.append(bool(cond))
@@ -36,6 +44,11 @@ with open(RAW_TSV, "rb") as f:
 print(f"  SHA-256: {sha}")
 check("raw TSV size is non-trivial (>10MB, not truncated)",
       os.path.getsize(RAW_TSV) > 10_000_000, f"{os.path.getsize(RAW_TSV):,} bytes")
+check("raw TSV SHA-256 matches last-verified checksum (no unnoticed input drift)",
+      sha == EXPECTED_RAW_SHA256,
+      f"got {sha[:16]}...  expected {EXPECTED_RAW_SHA256[:16]}...  "
+      "(if the input legitimately changed: re-run run_pipeline.py + run_branch.py "
+      "+ this full suite, THEN update EXPECTED_RAW_SHA256 in the same commit)")
 
 # ── B. Pure-text header parse (no pandas/pipeline code) ──────────────────────
 print("\n=== B. Sample-column accounting (pure regex, independent of scripts/) ===")

@@ -10,10 +10,13 @@ Steps:
     03 log2 transform
     04 normalize (reference-ratio + median)
     05 impute (MinProb)
-    06 DEP via limma (14 contrasts, ~0 + group + peptide_ug)
+    06 DEP via limma (20 contrasts, ~0 + group + peptide_ug)
     07 dimensionality reduction (PCA / t-SNE / UMAP)  [integrated module]
     08 hierarchical clustering analysis (samples + features)  [integrated module]
     10 pairwise 2-group analysis (PCA/t-SNE/UMAP + top-DEP heatmap per pair)
+
+Required last step after any regeneration:
+    bash tests/run_all.sh    # data-integrity verification suite (must pass)
 """
 
 from __future__ import annotations

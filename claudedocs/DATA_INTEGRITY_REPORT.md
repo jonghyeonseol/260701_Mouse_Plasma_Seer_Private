@@ -1,12 +1,12 @@
 # Data Integrity Report — Mouse Plasma SEER Pipeline
 
-**Date:** 2026-07-03
+**Date:** 2026-07-03 (practical audit extended 2026-07-04 with an input-drift check)
 **Scope:** Final data-integrity verification across all three projects — `MousePlasma`
 (main, 8 groups), `MousePlasma_WT`, `MousePlasma_KI` (per-genotype branches) — after the
 20-contrast DEP expansion, the pairwise module (step10), the ComplexHeatmap trend heatmap,
 and colormap/layout changes.
 
-**Result: ✅ 108 / 108 automated checks PASSED, plus a practical audit — 17 / 17 PASSED
+**Result: ✅ 108 / 108 automated checks PASSED, plus a practical audit — 18 / 18 PASSED
 with 1 item flagged for human review (not a proven defect).** See §5.
 
 > **Methodological note (added on practical review):** §§1–4 below re-derive each transform
@@ -29,7 +29,7 @@ matrices. Outputs were regenerated cleanly from the current code (`run_pipeline.
 | Branch preprocessing (WT + KI, steps 02–05) | `tests/verify_branch.py` | 44 | ✅ PASS |
 | Analytical layer (DEP / pairwise / trend / completeness) | `tests/verify_analysis.py` | 24 | ✅ PASS |
 | **Subtotal (regression-style, §§1–4)** | | **108** | **✅ PASS** |
-| Practical audit — implementation-independent | `tests/verify_practical_audit.py` | 17 | ✅ PASS (+1 flag) |
+| Practical audit — implementation-independent | `tests/verify_practical_audit.py` | 18 | ✅ PASS (+1 flag) |
 
 ---
 
@@ -79,7 +79,7 @@ matrices. Outputs were regenerated cleanly from the current code (`run_pipeline.
 - **Completeness:** final imputed matrices (all 3 projects) contain no NaN; no sync-artifact
   stray directories; pipeline config snapshot present.
 
-## 5. Practical audit — implementation-independent (17/17 PASS, 1 FLAG)
+## 5. Practical audit — implementation-independent (18/18 PASS, 1 FLAG)
 
 Added specifically to check what §§1–4 structurally cannot, because they share code with the
 pipeline. This suite parses the raw TSV with plain Python (no pandas/pipeline import) and the
@@ -88,7 +88,10 @@ via correlation, verifies statistical outputs against implementation-independent
 properties, and confirms branch isolation at the raw-column level.
 
 - **File chain of custody:** raw TSV present, non-truncated (12,778,156 bytes), SHA-256
-  recorded (`9e42b3a0…9a90c15`) for future drift detection.
+  recorded (`9e42b3a0…9a90c15`). **(Update 2026-07-04: this is no longer just recorded for
+  future reference — `verify_practical_audit.py` now asserts the checksum matches on every
+  run and fails the suite on mismatch, so undetected input drift is an active check, not a
+  passive log.)**
 - **Sample accounting (pure regex):** 84 columns (3 meta + 81 sample) exactly; no duplicate
   headers; all 81 sample columns matched by regex with **zero unmatched/silently-dropped
   columns**; `[index]` tags unique and complete 1..81.
@@ -147,11 +150,7 @@ This report only certifies the latter.
 ## Reproducing this verification
 ```bash
 python3 scripts/run_pipeline.py && python3 scripts/run_branch.py   # regenerate outputs
-python3 tests/verify_preprocessing.py
-python3 tests/verify_integrity.py
-python3 tests/verify_branch.py
-python3 tests/verify_analysis.py                                    # each exits 0 on success
-python3 tests/verify_practical_audit.py                            # implementation-independent
+bash tests/run_all.sh                                               # runs all 5 verify_*.py, fail-fast
 ```
 
 ## Conclusion

@@ -90,6 +90,10 @@ independently re-derives its target transform from the raw inputs and compares
 to the pipeline's saved outputs (exits 0 on success):
 
 ```bash
+bash tests/run_all.sh                     # runs all 5 scripts below, fail-fast
+```
+
+```bash
 python3 tests/verify_preprocessing.py     # steps 01-05 (main), independent recompute
 python3 tests/verify_integrity.py         # cross-step ID/order + metadata-join + sanity
 python3 tests/verify_branch.py            # WT/KI branch subset + steps 02-05
@@ -98,6 +102,9 @@ python3 tests/verify_practical_audit.py   # implementation-independent audit (fi
                                            # checksums, raw regex parsing, sample-
                                            # identity/duplication screening, BH math)
 ```
+
+**`bash tests/run_all.sh` must be run (and must pass) before merging any change
+to `scripts/`** — see `claudedocs/DATA_INTEGRITY_PM_PLAN.md` Phase B/C.
 
 See `claudedocs/DATA_INTEGRITY_REPORT.md` for the full results and one open item
 flagged for manual review (a high-correlation sample pair — not a proven defect,

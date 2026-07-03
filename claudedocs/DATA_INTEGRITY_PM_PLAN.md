@@ -11,6 +11,9 @@
 |---|---|
 | 2026-07-04 | Plan created. Phases B/C/D not yet started. |
 | 2026-07-04 | **Phase A confirmed PENDING** — maintainer has **not yet** contacted the core facility (KBSI) for the LC-MS run log. Request draft added below (§4, Phase A) so this can move to "sent" as soon as it goes out. |
+| 2026-07-04 | **Phase B DONE.** Added `tests/run_all.sh` (runs all 5 `verify_*.py`, fail-fast); documented as the required pre-merge command in `README.md`; referenced in `run_pipeline.py`/`run_branch.py` docstrings. Full suite re-verified passing (18/18 + 1 flag) after the change. |
+| 2026-07-04 | **Phase D bullet 2 DONE.** `tests/verify_practical_audit.py` now compares the raw TSV's SHA-256 against a recorded `EXPECTED_RAW_SHA256` constant and **fails** on mismatch, instead of merely printing the hash — input drift is now actually detected, not just loggable by a human who remembers to look. Remaining Phase D bullets (recurring cadence, plan housekeeping) still require human process, not code. |
+| 2026-07-04 | **Phase A still PENDING** — not advanced; requires the maintainer to actually send the request in §4a. Not fabricated as done. |
 
 ## 1. Objective
 
@@ -27,9 +30,9 @@ recurring cadence, ownership) and turns the one-off audit into a durable process
 | Preprocessing (01–05), all 3 projects | ✅ Closed — 84/84 checks, independent recompute |
 | Cross-step integrity + metadata join | ✅ Closed — 17/17 |
 | Analytical layer (DEP/pairwise/trend) | ✅ Closed — 24/24 |
-| Implementation-independent practical audit | ✅ Closed — 17/17 |
+| Implementation-independent practical audit | ✅ Closed — 18/18 (added raw-input SHA-256 drift check) |
 | **Sample-pair anomaly (`10W_KI8` vs `14W_WT10`, r=0.9966)** | 🟡 **Open — Phase A PENDING (not yet requested)**. Plate/report-order checked from existing files, no adjacency found; true LC-MS run-order record does not exist in this repo and has not yet been requested from the core facility. |
-| Governance / recurring re-verification | ❌ **Not established** — verification has so far been a one-time manual audit; Phases B–D not started |
+| Governance / recurring re-verification | 🟡 **Partial** — Phase B done (single fail-fast command, documented); Phase D bullet 2 (input-drift check) done; Phase C (keep-in-lockstep discipline) and remaining Phase D cadence still process, not code |
 
 ## 3. Gap analysis — what "achieved" actually requires
 
@@ -101,12 +104,15 @@ only its status is now accurately tracked instead of implied.
 > [name]
 
 ### Phase B — Make re-verification automatic, not manual (owner: maintainer, target: 1 week)
-- [ ] Add a `tests/run_all.sh` (or Makefile target) that runs all 5
+**Status: ✅ DONE (2026-07-04).**
+- [x] Add a `tests/run_all.sh` (or Makefile target) that runs all 5
       `verify_*.py` scripts in sequence and fails fast on the first non-zero
       exit — one command instead of five.
-- [ ] Wire it in as a pre-commit or pre-push hook (or at minimum, document in
-      `README.md` that it must be run before merging any change to `scripts/`).
-- [ ] Add it to the `run_pipeline.py` / `run_branch.py` docstring as the
+- [x] Document in `README.md` that it must be run before merging any change to
+      `scripts/`. (Pre-commit/pre-push git hook not wired up — plain
+      documentation was judged sufficient for a single-maintainer repo; revisit
+      if the contributor count grows.)
+- [x] Add it to the `run_pipeline.py` / `run_branch.py` docstring as the
       required last step after any regeneration.
 
 ### Phase C — Keep the suite honest as the pipeline evolves (owner: maintainer, ongoing)
@@ -120,10 +126,13 @@ only its status is now accurately tracked instead of implied.
 ### Phase D — Recurring integrity health-check (owner: maintainer, cadence: monthly or per data delivery)
 - [ ] Re-run `tests/verify_practical_audit.py` whenever `input_data/` changes
       (new report export, corrected xlsx) — it is the only script that checks
-      the raw files themselves rather than pipeline-derived state.
-- [ ] Spot-check the SHA-256 of `input_data/20260630_142950_20260529_Report.tsv`
-      against the value recorded in the audit output; a mismatch means the
-      input changed without the pipeline being re-run against it.
+      the raw files themselves rather than pipeline-derived state. *(process
+      discipline — still requires a human to trigger it; not automated.)*
+- [x] **Automated (2026-07-04):** the SHA-256 of
+      `input_data/20260630_142950_20260529_Report.tsv` is now checked against a
+      recorded `EXPECTED_RAW_SHA256` in `tests/verify_practical_audit.py` and
+      **fails the suite** on mismatch — this no longer depends on a human
+      remembering to "spot-check" it.
 - [ ] Revisit this plan itself after Phase A closes — retire completed items,
       don't let the document accumulate stale checkboxes.
 

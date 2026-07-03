@@ -8,6 +8,9 @@ DEP (step06) and the heavy step01 QC are intentionally skipped.
 Usage:
     python scripts/run_branch.py
     python scripts/run_branch.py --dataset MousePlasma_WT
+
+Required last step after any regeneration:
+    bash tests/run_all.sh    # data-integrity verification suite (must pass)
 """
 
 from __future__ import annotations
