@@ -212,6 +212,7 @@ TREND_N_CLUSTERS = 6          # fuzzy c-means clusters for temporal profiles
 TREND_FUZZIFIER = 1.5         # c-means fuzzifier m (Mfuzz-style soft membership)
 TREND_SEED = 42
 TREND_CORE_MEMBERSHIP = 0.5   # membership ≥ this = "core" cluster member
+TREND_HEATMAP_TOP_N = 30      # top-N per direction shown (labeled) in trend_heatmap
 
 # ── Dataset registry: main (all 8 groups) + per-genotype branches ────────────
 # Branch datasets subset to one genotype's 4 timepoint groups (+ pooled ref for

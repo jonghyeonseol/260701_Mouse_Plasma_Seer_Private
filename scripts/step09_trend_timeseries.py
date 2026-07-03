@@ -214,6 +214,117 @@ def _trend_line_plots(prof, ids, labels, trend_df, timepoints, out, fig_mirror, 
                 import shutil; shutil.copy(src, os.path.join(fig_mirror, os.path.basename(src)))
 
 
+def _fdr_star(adjp: float) -> str:
+    if adjp < 0.001:
+        return "***"
+    if adjp < 0.01:
+        return "**"
+    if adjp < 0.05:
+        return "*"
+    return "ns"
+
+
+def _trend_heatmap(prof, ids, trend_df, timepoints, out, fig_mirror, dataset,
+                   n_each=None):
+    """Trend heatmap via R ComplexHeatmap (rpy2), reproducing the reference
+    layout (branch/scripts/step08_trend_analysis.R): significantly-trending
+    proteins as rows ordered by Spearman rho (decreasing→increasing gradient),
+    timepoints as columns, blue-white-red z-score, left Trend-FDR (stars) +
+    Direction annotation strips, protein labels on the right, all legends merged
+    at the bottom, with fixed cell geometry."""
+    import shutil
+    n_each = n_each or config.TREND_HEATMAP_TOP_N
+    inc = trend_df[trend_df["direction"] == "Increasing"].copy()
+    inc = inc.reindex(inc["week_t"].sort_values(ascending=False).index).head(n_each)
+    dec = trend_df[trend_df["direction"] == "Decreasing"].copy()
+    dec = dec.reindex(dec["week_t"].sort_values(ascending=True).index).head(n_each)
+    sel = pd.concat([inc, dec])
+    # Reference ordering: rows sorted by Spearman rho ascending (decreasing top).
+    sel = sel.sort_values("spearman_rho")
+    n = len(sel)
+    if n < 4:
+        return
+
+    id_to_row = {pid: i for i, pid in enumerate(ids)}
+    ridx = [id_to_row[str(pid)] for pid in sel[config.ID_COL].astype(str)]
+    P = prof[ridx]
+    z = (P - P.mean(axis=1, keepdims=True)) / (P.std(axis=1, keepdims=True, ddof=0) + 1e-9)
+    z = np.clip(z, -2, 2)
+
+    row_labels = sel["label"].astype(str).tolist()
+    direction = sel["direction"].tolist()
+    fdr_star = [_fdr_star(a) for a in sel["week_adjP"]]
+    col_labels = [f"{t}W" for t in timepoints]
+
+    # Fixed cell geometry (reference).
+    cell_h = max(8.0, min(18.0, 400.0 / n))       # pt
+    row_fs = max(5.0, min(10.0, 300.0 / n))
+    dev_w = 8.5
+    dev_h = max(6.0, n * cell_h / 72.0 + 3.0)     # inches
+
+    png_path = os.path.join(out, "trend_heatmap.png")
+    svg_path = os.path.join(out, "trend_heatmap.svg")
+
+    ro, _ = _init_rpy2()
+    ro.r.assign("z_vec", ro.FloatVector(z.flatten("F")))
+    ro.r.assign("n_row", n)
+    ro.r.assign("n_col", z.shape[1])
+    ro.r.assign("row_labels", ro.StrVector(row_labels))
+    ro.r.assign("col_labels", ro.StrVector(col_labels))
+    ro.r.assign("direction", ro.StrVector(direction))
+    ro.r.assign("fdr_star", ro.StrVector(fdr_star))
+    ro.r.assign("cell_h", float(cell_h))
+    ro.r.assign("row_fs", float(row_fs))
+    ro.r.assign("dev_w", float(dev_w))
+    ro.r.assign("dev_h", float(dev_h))
+    ro.r.assign("png_path", png_path)
+    ro.r.assign("svg_path", svg_path)
+    ro.r(r'''
+    suppressMessages({library(ComplexHeatmap); library(circlize)})
+    m <- matrix(z_vec, nrow = n_row, ncol = n_col)
+    col_fun <- colorRamp2(c(-2, -1, 0, 1, 2),
+                          c("#3B4CC0", "#9BB8E3", "#F7F7F7", "#E88482", "#B40426"))
+    dir_cols <- c(Increasing = "#e74c3c", Decreasing = "#3498db")
+    fdr_cols <- c("***" = "#8B0000", "**" = "#CD5C5C", "*" = "#F4A460", "ns" = "grey85")
+    ha <- rowAnnotation(
+      `Trend FDR` = fdr_star,
+      Direction   = direction,
+      col = list(`Trend FDR` = fdr_cols, Direction = dir_cols),
+      annotation_width = unit(c(5, 5), "mm"),
+      annotation_name_gp = gpar(fontsize = 9),
+      annotation_name_side = "top",
+      gap = unit(1, "mm")
+    )
+    ht <- Heatmap(
+      m, name = "z-score", col = col_fun,
+      cluster_rows = FALSE, cluster_columns = FALSE,
+      row_labels = row_labels, column_labels = col_labels,
+      row_names_side = "right", row_names_gp = gpar(fontsize = row_fs),
+      column_names_gp = gpar(fontsize = 11), column_names_rot = 45,
+      left_annotation = ha,
+      border = "grey90", rect_gp = gpar(col = "grey90"),
+      width  = unit(15 * n_col, "mm"),
+      height = unit(cell_h * n_row, "pt"),
+      heatmap_legend_param = list(title = "z-score", at = c(-2, -1, 0, 1, 2),
+                                  border = "grey50")
+    )
+    draw_it <- function() draw(ht, heatmap_legend_side = "bottom",
+                               annotation_legend_side = "bottom", merge_legend = TRUE,
+                               padding = unit(c(5, 10, 20, 5), "mm"))
+    png(png_path, width = dev_w, height = dev_h, units = "in", res = 300)
+    draw_it(); dev.off()
+    tryCatch({ svg(svg_path, width = dev_w, height = dev_h); draw_it(); dev.off() },
+             error = function(e) message("  svg render skipped: ", conditionMessage(e)))
+    ''')
+
+    utils.save_tsv(sel[[config.ID_COL, "label", "direction", "spearman_rho",
+                        "week_slope", "week_t", "week_P", "week_adjP"]],
+                   out, "trend_heatmap_features")
+    for p in (png_path, svg_path):
+        if os.path.exists(p):
+            shutil.copy(p, os.path.join(fig_mirror, os.path.basename(p)))
+
+
 def run(dataset: str, logger, state: dict) -> dict:
     cfg = config.DATASETS[dataset]
     out = utils.step_path(dataset, "09_trend_timeseries")
@@ -279,6 +390,7 @@ def run(dataset: str, logger, state: dict) -> dict:
         f.write(f"Increasing: {n_inc}\nDecreasing: {n_dec}\n"
                 f"NS: {len(trend) - n_inc - n_dec}\n")
     _trend_line_plots(prof, ids, labels, trend, timepoints, out, fig_mirror, dataset)
+    _trend_heatmap(prof, ids, trend, timepoints, out, fig_mirror, dataset)
     logger.info(f"[step09] {dataset}: monotonic trend — {n_inc} increasing, "
                 f"{n_dec} decreasing (limma week raw p<{config.PVALUE_THRESHOLD}).")
 
