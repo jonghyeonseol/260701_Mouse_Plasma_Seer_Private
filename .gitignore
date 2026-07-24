@@ -1,3 +1,12 @@
 __pycache__/
 *.pyc
 *.pyo
+
+# Pipeline outputs — too large for version control; fully regenerable via
+# `python3 scripts/run_pipeline.py` + `python3 scripts/run_branch.py`
+# (reproducibility confirmed 2026-07-24: fresh run + tests/run_all.sh, 0 files missing).
+output_data/
+output_data.zip
+
+# macOS
+.DS_Store

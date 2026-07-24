@@ -5,15 +5,18 @@ Usage:
     python scripts/run_pipeline.py --dataset MousePlasma
 
 Steps:
-    01 raw_summary + QC (peptide recovery, plate batch)
-    02 filter (per-group valid fraction)
-    03 log2 transform
-    04 normalize (reference-ratio + median)
-    05 impute (MinProb)
-    06 DEP via limma (20 contrasts, ~0 + group + peptide_ug)
-    07 dimensionality reduction (PCA / t-SNE / UMAP)  [integrated module]
-    08 hierarchical clustering analysis (samples + features)  [integrated module]
-    10 pairwise 2-group analysis (PCA/t-SNE/UMAP + top-DEP heatmap per pair)
+    01  raw_summary + QC (peptide recovery, plate batch)
+    01b mouse-brain protein annotation (disk-only; does not alter step02+ input)
+    02  filter (per-group valid fraction)
+    03  log2 transform
+    04  normalize (reference-ratio + median)
+    05  impute (MinProb)
+    06  DEP via limma (20 contrasts, ~0 + group + peptide_ug)
+    07  dimensionality reduction (PCA / t-SNE / UMAP)  [integrated module]
+    08  hierarchical clustering analysis (samples + features)  [integrated module]
+    10  pairwise 2-group analysis (PCA/t-SNE/UMAP + top-DEP heatmap per pair)
+    11  mouse-brain-protein-filtered re-analysis (dim-reduction + clustering)
+    12  regionally-elevated-only re-analysis (763-gene DB subset -> real-data coverage)
 
 Required last step after any regeneration:
     bash tests/run_all.sh    # data-integrity verification suite (must pass)
@@ -31,6 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config
 import utils
 import step01_raw_summary as s1
+import step01b_brain_annotation as s1b
 import step02_filter as s2
 import step03_log2_transform as s3
 import step04_normalize as s4
@@ -39,6 +43,8 @@ import step06_dep_limma as s6
 import step07_dim_reduction as s7
 import step08_clustering as s8
 import step10_pairwise as s10
+import step11_brain_filtered as s11
+import step12_regionally_elevated as s12
 
 
 def _save_snapshot():
@@ -70,7 +76,8 @@ def run_dataset(dataset: str):
     logger = utils.setup_logger(dataset)
     logger.info(f"=== START pipeline {dataset} ===")
     state = s1.run(dataset, logger)
-    for step in (s2, s3, s4, s5, s6, s7, s8, s10):
+    state = s1b.run(dataset, logger, state)
+    for step in (s2, s3, s4, s5, s6, s7, s8, s10, s11, s12):
         state = step.run(dataset, logger, state)
     logger.info(f"=== END pipeline {dataset} ===")
     return state

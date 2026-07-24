@@ -1,7 +1,0 @@
-Monotonic trend over weeks [8, 10, 12, 14] — MousePlasma_KI
-criterion: limma linear-week raw P<0.05
-(BH adj.P and Jonckheere-Terpstra / Spearman also reported)
-
-Increasing: 138
-Decreasing: 340
-NS: 7649

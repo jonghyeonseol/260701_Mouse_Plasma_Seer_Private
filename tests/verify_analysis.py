@@ -141,6 +141,75 @@ for ds in ["MousePlasma_WT", "MousePlasma_KI"]:
     check(f"[{ds}] profile clusters: IDs == branch set, cluster∈1..{config.TREND_N_CLUSTERS}",
           set(clu[ID]) == set(imp_ids) and clu["cluster"].between(1, config.TREND_N_CLUSTERS).all())
 
+# ── Mouse-brain protein annotation (step01b) + brain-filtered re-analysis (step11) ─
+print("\n=== Mouse-brain protein annotation (step01b) integrity ===")
+raw_path = f"{MAIN}/01_raw_summary/raw_intensity_matrix.tsv"
+ann_path = f"{MAIN}/01_raw_summary/mouse_brain_annotation.tsv"
+ann_cols = ["is_mouse_brain_protein", "mouse_brain_regional_category", "is_regionally_elevated"]
+if os.path.exists(raw_path) and os.path.exists(ann_path):
+    raw = pd.read_csv(raw_path, sep="\t")
+    ann = pd.read_csv(ann_path, sep="\t")
+    check("raw_intensity_matrix.tsv carries all 3 annotation columns",
+          all(c in raw.columns for c in ann_cols), str(raw.columns[-3:].tolist()))
+    check("raw_intensity_matrix.tsv row count/IDs unchanged by annotation (disk-only augmentation)",
+          len(raw) == 9769 and raw[ID].is_unique, f"n={len(raw)}")
+    check("is_regionally_elevated implies is_mouse_brain_protein (annotation table)",
+          (ann.loc[ann["is_regionally_elevated"], "is_mouse_brain_protein"] == True).all())
+    check("is_regionally_elevated implies is_mouse_brain_protein (raw matrix copy)",
+          (raw.loc[raw["is_regionally_elevated"] == True, "is_mouse_brain_protein"] == True).all())
+    check("mouse_brain_regional_category ⊆ config.BRAIN_ELEVATED_CATEGORIES ∪ {Low region specificity, ''}",
+          set(ann.loc[ann["is_mouse_brain_protein"], "mouse_brain_regional_category"].unique())
+          <= set(config.BRAIN_ELEVATED_CATEGORIES) | {"Low region specificity"})
+    check("every accession has a cached UniProt gene-name lookup (no silent skips)",
+          os.path.exists(config.UNIPROT_GENE_NAME_CACHE) and
+          set(ann[ID]) <= set(pd.read_csv(config.UNIPROT_GENE_NAME_CACHE, sep="\t")["accession"]))
+
+    print("\n=== Brain-protein-filtered re-analysis (step11) integrity ===")
+    step11_dir = f"{MAIN}/11_brain_filtered"
+    filt = pd.read_csv(f"{MAIN}/02_filtered/filtered_matrix.tsv", sep="\t")
+    expected_brain_ids = set(ann.loc[ann["is_mouse_brain_protein"], ID]) & set(filt[ID])
+    bp = pd.read_csv(f"{step11_dir}/brain_protein_matrix.tsv", sep="\t")
+    check("step11 subset == is_mouse_brain_protein ∩ filtered-protein set (no drift)",
+          set(bp[ID]) == expected_brain_ids, f"step11 n={len(bp)}, expected={len(expected_brain_ids)}")
+    pca = pd.read_csv(f"{step11_dir}/pca_scores.tsv", sep="\t")
+    check("step11 PCA covers all 80 biological samples",
+          len(pca) == 80 and set(pca["group"]) == set(config.PLASMA_GROUP_ORDER))
+    summ = pd.read_csv(f"{step11_dir}/brain_filtered_separation_summary.tsv", sep="\t")
+    check("step11 separation summary covers genotype/timepoint/group axes",
+          set(summ["axis"]) == {"genotype", "timepoint", "group"})
+
+    print("\n=== Regionally-elevated-only re-analysis (step12) integrity ===")
+    step12_dir = f"{MAIN}/12_regionally_elevated"
+    db = pd.read_csv(config.MOUSE_BRAIN_DB, sep="\t", low_memory=False)
+    db_elevated_mask = db[config.BRAIN_DB_REGIONAL_COL].isin(config.BRAIN_ELEVATED_CATEGORIES)
+    db_elevated_genes = set(db.loc[db_elevated_mask, config.BRAIN_DB_GENE_COL].str.upper())
+    check("DB regionally-elevated gene count == 763 (333+266+164, confirmed 2026-07-13)",
+          len(db_elevated_genes) == 763, f"n={len(db_elevated_genes)}")
+
+    cov = pd.read_csv(f"{step12_dir}/regionally_elevated_coverage_report.tsv", sep="\t")
+    check("coverage report: DB stage == 763 genes",
+          int(cov.loc[cov["stage"].str.startswith("DB"), "n_genes"].iloc[0]) == 763)
+    expected_elevated_ids = set(ann.loc[ann["is_regionally_elevated"], ID]) & set(filt[ID])
+    re = pd.read_csv(f"{step12_dir}/regionally_elevated_matrix.tsv", sep="\t")
+    check("step12 subset == is_regionally_elevated ∩ filtered-protein set (no drift)",
+          set(re[ID]) == expected_elevated_ids, f"step12 n={len(re)}, expected={len(expected_elevated_ids)}")
+    check("step12 subset ⊆ step11 subset (elevated is a subset of all brain proteins)",
+          set(re[ID]) <= set(bp[ID]))
+    # pandas auto-infers "True"/"False" text columns as bool on read_csv, so
+    # accept either representation (the file itself stores the literal text
+    # "True"/"False", verified separately by inspecting the raw bytes).
+    mbp_all_true = (re["Mouse_Brain_Protein"] == "True").all() or \
+                  (re["Mouse_Brain_Protein"] == True).all()
+    check("regionally_elevated_matrix.tsv: Mouse_Brain_Protein all 'True', Regional_Category "
+          "∈ BRAIN_ELEVATED_CATEGORIES (last 2 columns)",
+          mbp_all_true and
+          set(re["Regional_Category"].unique()) <= set(config.BRAIN_ELEVATED_CATEGORIES))
+    pca12 = pd.read_csv(f"{step12_dir}/pca_scores.tsv", sep="\t")
+    check("step12 PCA covers all 80 biological samples",
+          len(pca12) == 80 and set(pca12["group"]) == set(config.PLASMA_GROUP_ORDER))
+else:
+    check("step01b/step11 outputs present (raw_intensity_matrix + mouse_brain_annotation)", False)
+
 # ── Completeness / no-corruption ─────────────────────────────────────────────
 print("\n=== Completeness / no-corruption ===")
 for ds in ["MousePlasma", "MousePlasma_WT", "MousePlasma_KI"]:

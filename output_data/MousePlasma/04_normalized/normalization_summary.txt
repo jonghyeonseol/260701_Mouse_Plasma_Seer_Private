@@ -1,5 +1,0 @@
-method: ref_ratio_median
-n_proteins: 7899
-n_bio_samples: 80
-ref_used_pooled: 7836
-ref_used_rowmean_fallback: 63

@@ -39,6 +39,22 @@ PLASMA_INPUT = os.path.join(INPUT_DIR, "20260630_142950_20260529_Report.tsv")
 SAMPLE_INFO_XLSX = os.path.join(INPUT_DIR, "plasma_sample_information.xlsx")
 PLASMA_DIR = os.path.join(OUTPUT_DIR, "MousePlasma")
 
+DATABASE_DIR = os.path.join(BASE_DIR, "database")
+# HPA export: human gene records (Gene/Ensembl/Uniprot = human) carrying mouse-brain
+# RNA regional-specificity data (see scripts/step01b_brain_annotation.py). Every row
+# has a non-null "RNA mouse brain regional specificity" — the file itself is already
+# a curated "detected in mouse brain" gene list, so membership = mouse-brain protein.
+MOUSE_BRAIN_DB = os.path.join(DATABASE_DIR, "260525_v25.1_mouse_brain_category_rna_Any_Region.tsv")
+BRAIN_DB_GENE_COL = "Gene"
+BRAIN_DB_REGIONAL_COL = "RNA mouse brain regional specificity"
+# "Elevated" = HPA's standard union of enriched/enhanced categories, excluding
+# "Low region specificity" (confirmed with user 2026-07-13).
+BRAIN_ELEVATED_CATEGORIES = ["Region enriched", "Region enhanced", "Group enriched"]
+
+# Cache of mouse UniProt accession -> UniProt gene-name synonyms (space-separated),
+# fetched via the UniProt REST API (see step01b). Avoids re-querying on every run.
+UNIPROT_GENE_NAME_CACHE = os.path.join(SHARED_DIR, "uniprot_gene_names_cache.tsv")
+
 STEP_DIRS = {
     "01_raw_summary":      "01_raw_summary",
     "02_filtered":         "02_filtered",
@@ -50,6 +66,8 @@ STEP_DIRS = {
     "08_clustering":       "08_clustering",
     "09_trend_timeseries": "09_trend_timeseries",
     "10_pairwise":         "10_pairwise",
+    "11_brain_filtered":   "11_brain_filtered",
+    "12_regionally_elevated": "12_regionally_elevated",
     "figures":             "figures",
 }
 
