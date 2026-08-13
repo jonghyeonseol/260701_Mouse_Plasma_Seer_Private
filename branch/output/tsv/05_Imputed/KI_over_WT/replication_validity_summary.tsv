@@ -1,0 +1,5 @@
+timepoint	n_WT_replicates	n_KI_replicates	n_pairwise_ratio_values	n_independent_replicates	pseudoreplication_inflation_factor
+8W	10	10	100	20	5.0
+10W	11	12	132	23	5.74
+12W	9	8	72	17	4.24
+14W	10	10	100	20	5.0
