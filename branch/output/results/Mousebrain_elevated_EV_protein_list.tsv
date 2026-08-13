@@ -1,0 +1,150 @@
+Gene	Exosome_Classification	PG.ProteinGroups	detected_raw	detected_WT_QC	detected_KI_QC
+ACTN2	LC-VP		False	False	False
+ADPRHL1	LC-VP	Q8BGK2	True	True	True
+ALDH3B2	LC-VP	E9Q3E1	True	True	True
+ALOX12	LC-VP	P39655	True	True	True
+ALOX5	LC-VP	P48999	True	True	True
+AQP1	LC-EC; LC-VP	Q02013	True	True	True
+AREG	LC-VP		False	False	False
+ARG1	LC-VP	Q61176	True	True	True
+ART4	LC-VP	Q9CRA0	True	True	True
+ARTN	LC-VP		False	False	False
+ATP2A1	LC-VP	Q8R429	True	True	True
+ATP2A3	LC-VP	Q64518	True	True	True
+AVPR1A	LC-VP		False	False	False
+BHLHE22	LC-EC; LC-VP		False	False	False
+BPIFA1	LC-VP	P97361	True	True	True
+BRS3	LC-VP		False	False	False
+CASP1	LC-EC; LC-VP	P29452	True	True	True
+CBR3	LC-VP	Q8K354	True	True	True
+CCBE1	LC-VP		False	False	False
+CCDC69	LC-VP		False	False	False
+CCR6	LC-VP		False	False	False
+CD28	LC-EC; LC-VP		False	False	False
+CD4	LC-VP	P06332	True	True	True
+CD7	LC-VP		False	False	False
+CD72	LC-VP	P21855	True	True	False
+CD82	LC-EC; LC-VP	P40237	True	True	True
+CDC42BPG	LC-VP	Q80UW5	True	True	True
+CDH3	LC-VP	P10287	True	True	True
+CDHR2	LC-EC; LC-VP		False	False	False
+CDKN1A	LC-VP		False	False	False
+CDSN	LC-VP	Q7TPC1	True	True	True
+CGA	LC-VP		False	False	False
+CKM	LC-VP	P07310	True	True	True
+CLDN3	LC-VP	Q9Z0G9	True	True	True
+CNP	LC-EC; LC-VP	P16330	True	True	True
+COL18A1	LC-EC; LC-VP	P39061	True	True	True
+COL6A3	LC-VP		False	False	False
+CPNE5	LC-EC; LC-VP		False	False	False
+CRYBB2	LC-VP		False	False	False
+DLX2	LC-EC; LC-VP		False	False	False
+DSP	LC-EC; LC-VP	E9Q557	True	True	True
+ECEL1	LC-EC; LC-VP		False	False	False
+ELL3	LC-EC; LC-VP		False	False	False
+EPHA8	LC-VP		False	False	False
+EXPH5	LC-VP		False	False	False
+F5	LC-EC; LC-VP	O88783	True	True	True
+FBLN2	LC-EC; LC-VP	P37889	True	True	True
+FBN2	LC-VP	Q61555	True	True	True
+FERMT1	LC-VP		False	False	False
+FGF17	LC-VP		False	False	False
+FIBCD1	LC-VP		False	False	False
+GNAT1	LC-VP		False	False	False
+GNG7	LC-VP	Q61016	True	True	True
+GPNMB	LC-EC; LC-VP	Q99P91	True	False	False
+GPR149	LC-EC; LC-VP		False	False	False
+GPRC5C	LC-VP	Q8K3J9	True	False	True
+GPX2	LC-VP	Q9JHC0	True	True	True
+GPX3	LC-VP	P46412	True	True	True
+GREM1	LC-EC; LC-VP	O70326	True	True	True
+GSN	LC-EC; HC-VP	P13020	True	True	True
+HKDC1	LC-VP	Q91W97	True	False	False
+HMX3	LC-VP		False	False	False
+HPSE	LC-VP	Q6YGZ1	True	True	True
+IDO1	LC-VP		False	False	False
+IL12A	LC-VP		False	False	False
+IL2RB	LC-VP		False	False	False
+INF2	LC-VP	Q0GNC1	True	True	True
+INPP5A	LC-VP	Q7TNC9	True	True	True
+IQGAP2	LC-EC; LC-VP	Q3UQ44	True	True	True
+ITGA5	LC-EC; LC-VP	P11688	True	True	True
+ITPR1	LC-VP	P11881	True	True	True
+KCNN4	LC-VP	O89109	True	False	False
+KIF2C	LC-EC; LC-VP	Q922S8	True	True	True
+KRT15	LC-EC; LC-VP	Q61414	True	True	True
+KRT2	LC-EC; LC-VP	Q3TTY5	True	True	True
+KRT24	LC-VP		False	False	False
+KRT28	LC-VP		False	False	False
+LEF1	LC-EC; LC-VP	P27782	True	False	False
+LPL	LC-EC; LC-VP	P11152	True	True	True
+LTBP2	LC-VP	O08999	True	True	True
+MDFI	LC-EC; LC-VP		False	False	False
+MME	LC-VP	P34960	True	True	True
+MME	LC-VP	Q61391	True	True	True
+MMP19	LC-VP	Q9JHI0	True	True	True
+MOG	LC-EC; LC-VP		False	False	False
+MRGPRF	LC-VP	Q8VCJ6	True	False	False
+MYL1	LC-VP	P05977	True	True	True
+NCAPG	LC-VP		False	False	False
+NCCRP1	LC-EC; LC-VP		False	False	False
+NEUROD1	LC-EC; LC-VP		False	False	False
+NLRP10	LC-VP		False	False	False
+NMB	LC-EC; LC-VP	Q9CR53	True	True	True
+NPR1	LC-VP	P18293	True	True	True
+NR5A2	LC-EC; LC-VP	P45448	True	False	False
+OLFML2B	LC-EC; LC-VP	Q3V1G4	True	True	True
+OVGP1	LC-EC; LC-VP	Q62010	True	True	True
+PAX8	LC-EC; LC-VP		False	False	False
+PBX3	LC-VP		False	False	False
+PCBP3	LC-VP	P57722	True	False	False
+PKLR	LC-EC; LC-VP	P53657	True	True	True
+PKP2	LC-VP	Q9CQ73	True	True	True
+PKP3	LC-VP	Q9QY23	True	True	True
+PLXND1	LC-VP	Q3UH93	True	True	True
+POU4F1	LC-EC; LC-VP		False	False	False
+PRDM1	LC-EC; LC-VP		False	False	False
+PRDM16	LC-EC; LC-VP		False	False	False
+PRDM8	LC-VP		False	False	False
+PRKCD	LC-VP	P28867	True	True	True
+PRKCH	LC-EC; LC-VP	P23298	True	True	True
+PRPH	LC-VP	P15331	True	False	False
+PRSS22	LC-VP		False	False	False
+PTGS2	LC-EC; LC-VP		False	False	False
+PTPRCAP	LC-EC; LC-VP	Q64697	True	True	True
+PTPRR	LC-VP		False	False	False
+PVALB	LC-VP	P32848	True	True	True
+RGS16	LC-VP	P97428	True	False	False
+RHOD	LC-VP	P97348	True	True	True
+SCGN	LC-VP		False	False	False
+SEBOX	LC-EC; LC-VP		False	False	False
+SHOX2	LC-VP		False	False	False
+SLC24A5	LC-VP	Q8C261	True	True	True
+SLC43A3	LC-VP	A2AVZ9	True	True	True
+SLC5A7	LC-VP		False	False	False
+SLC6A4	LC-VP	Q60857	True	True	True
+SMOC2	LC-VP	Q8CD91	True	True	True
+SMPD3	LC-VP	Q9JJY3	True	True	True
+SNCG	LC-VP	Q9Z0F7	True	False	False
+SOST	LC-VP	Q99P68	True	True	True
+SPP1	LC-EC; LC-VP		False	False	False
+STK17B	LC-VP	Q8BG48	True	True	False
+SVEP1	LC-VP	A2AVA0	True	True	True
+SYCP1	LC-VP		False	False	False
+TAL1	LC-VP	P22091	True	False	False
+TFF3	LC-EC; LC-VP		False	False	False
+TG	LC-EC; LC-VP		False	False	False
+THBS4	LC-EC; LC-VP	Q9Z1T2	True	True	True
+TK1	LC-VP	P04184	True	True	True
+TNFRSF8	LC-EC; LC-VP		False	False	False
+TNNC2	LC-VP	P20801	True	False	False
+TOP2A	LC-EC; LC-VP	Q01320	True	True	True
+TSPAN2	LC-VP	Q922J6	True	True	True
+TSPAN4	LC-EC; LC-VP	Q9DCK3	True	True	True
+TTR	LC-VP	P07309	True	True	True
+TUBA8	LC-EC; LC-VP	Q9JJZ2	True	True	True
+TUBB6	LC-EC; LC-VP	Q922F4	True	True	True
+TYRP1	LC-VP	P07147	True	False	False
+UBE2C	LC-VP	Q9D1C1	True	True	False
+VNN1	LC-EC; LC-VP	Q9Z0K8	True	True	True
+VWA5A	LC-EC; LC-VP	Q99KC8	True	True	True
