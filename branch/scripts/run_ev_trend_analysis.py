@@ -36,7 +36,39 @@ write tsv audit trails only (no plots) — so ITS OWN local sequence is:
      timepoint + BH FDR. Figures (palette copied from the reference
      project's trends_common.R): trend_volcano.png, trend_heatmap.png,
      trend_boxplots_significant.png, trend_boxplots_top.png,
-     trend_mean_se_lines.png.
+     trend_mean_se_lines.png. Run 3x, on 3 different data views, each in
+     its own subfolder:
+       WT/         — WT-only replicate values.
+       KI/         — KI-only replicate values.
+       KI_over_WT/ — tests whether the KI-vs-WT DIVERGENCE ITSELF trends
+         monotonically over time (genotype x time interaction), not just
+         each genotype's own time course. Restricted to the proteins
+         detected + QC-surviving in BOTH branches. TWO complementary pieces:
+           - Significance (run_genotype_interaction_test): a single limma
+             linear model per protein, value ~ genotype*week (+peptide_ug),
+             fit on the REAL un-expanded sample-level data (e.g. 10 WT + 10
+             KI = 20 real mice at 8W). The genotype:week coefficient is the
+             per-week rate of change of log2(KI/WT); its eBayes-moderated
+             p-value/FDR is what's actually reported as significant. This
+             is the methodologically correct approach (same limma pattern
+             already used by step06_dep_limma/step09_trend_timeseries) —
+             an EARLIER version of this analysis instead ran a
+             Jonckheere-Terpstra test on an all-pairwise-expanded WTxKI
+             ratio matrix (every WT_i(t)/KI_j(t) combination materialized
+             as a pseudo-replicate), which double-counts JT's own internal
+             pairwise-comparison structure and inflates significance —
+             confirmed empirically (27/75 "significant" vs 0/75 once
+             refit with real n). That approach is no longer used for
+             p-values; kept only as a descriptive visualization layer, see
+             below.
+           - Visualization (build_ki_wt_ratio_matrix): every (WT_i(t),
+             KI_j(t)) replicate pair -> KI_j(t) - WT_i(t) (log2 scale, so
+             = log2(KI_j / WT_i)) is still materialized for the box/mean-SE/
+             heatmap PLOTS, since WT and KI are unpaired mice with no
+             natural 1:1 pairing and this Hodges-Lehmann-style all-pairs
+             set is a legitimate way to DISPLAY the ratio's spread (its
+             mean exactly equals mean(KI)-mean(WT) at each timepoint by
+             linearity). It is not used for any p-value.
 
 Each tsv/ stage 01-05 shows exactly which candidate proteins were carried
 into / dropped at that step, so the final trend-analysis numbers are
@@ -48,10 +80,11 @@ Outputs (this project's branch/ tree):
   branch/output/tsv/03_Log2_Transformed/{WT,KI}_ev_subset_log2.tsv
   branch/output/tsv/04_Normalized/{WT,KI}_ev_subset_normalized.tsv
   branch/output/tsv/05_Imputed/{WT,KI}_ev_subset_imputed.tsv
+  branch/output/tsv/05_Imputed/KI_over_WT_ev_subset_ratio.tsv
   branch/output/figures/01_EV_Candidate_Matching/candidate_coverage_funnel.png
-  branch/output/figures/02_Trend_Analysis/{WT,KI}/*.png
+  branch/output/figures/02_Trend_Analysis/{WT,KI,KI_over_WT}/*.png
   branch/output/results/Mousebrain_elevated_EV_protein_list.tsv
-  branch/output/results/trend_test_results_{WT,KI}.tsv
+  branch/output/results/trend_test_results_{WT,KI,KI_over_WT}.tsv
 """
 
 from __future__ import annotations
@@ -221,7 +254,30 @@ def plot_candidate_coverage_funnel(n_total, n_raw, n_wt, n_ki, logger):
 # 4. Trend test (Jonckheere-Terpstra + Spearman) across ordered timepoints
 # ══════════════════════════════════════════════════════════════════════════
 
+def _stage_group_means(matrix: pd.DataFrame, bio: pd.DataFrame) -> pd.DataFrame:
+    """Per-protein group mean at each ordered timepoint + a simple monotonic-
+    ity flag. Used both by run_trend_test (WT/KI branches) and by the
+    genotype-interaction analysis (descriptive-only there — see its own
+    significance test)."""
+    sample_cols = bio["column_name"].tolist()
+    stage_vec = bio.set_index("column_name").loc[sample_cols, "timepoint"].astype(int).values
+    vals = matrix[sample_cols].values.astype(float)
+    gmeans = {t: vals[:, stage_vec == t].mean(axis=1) for t in tc.STAGE_ORDER}
+    gmean_mat = np.column_stack([gmeans[t] for t in tc.STAGE_ORDER])
+    diffs = np.diff(gmean_mat, axis=1)
+    monotonic = np.all(diffs >= 0, axis=1) | np.all(diffs <= 0, axis=1)
+    out = pd.DataFrame({f"Mean_{tc.STAGE_LABELS[t]}": gmeans[t] for t in tc.STAGE_ORDER})
+    out["Monotonic"] = monotonic
+    return out
+
+
 def run_trend_test(matrix: pd.DataFrame, bio: pd.DataFrame, logger) -> pd.DataFrame:
+    """Jonckheere-Terpstra + Spearman trend test. Valid when `matrix`'s
+    sample columns are REAL, independent biological replicates (as they are
+    for the WT-only and KI-only branches) — do NOT feed this a pairwise-
+    expanded ratio matrix (see run_genotype_interaction_test for that case;
+    JT/Spearman's variance formulas assume independent observations, which
+    pairwise-expanded pseudo-replicates violate)."""
     sample_cols = bio["column_name"].tolist()
     stage_vec = bio.set_index("column_name").loc[sample_cols, "timepoint"].astype(int).values
     vals = matrix[sample_cols].values.astype(float)
@@ -235,19 +291,12 @@ def run_trend_test(matrix: pd.DataFrame, bio: pd.DataFrame, logger) -> pd.DataFr
         r = spearmanr(vals[i], stage_vec)
         sp_rho[i], sp_p[i] = r.statistic, r.pvalue
 
-    gmeans = {t: vals[:, stage_vec == t].mean(axis=1) for t in tc.STAGE_ORDER}
-    gmean_mat = np.column_stack([gmeans[t] for t in tc.STAGE_ORDER])
-    diffs = np.diff(gmean_mat, axis=1)
-    monotonic = np.all(diffs >= 0, axis=1) | np.all(diffs <= 0, axis=1)
-
     out = matrix[[config.ID_COL, "Gene", "Exosome_Classification", "label"]].copy()
     out["JT_z"] = jt_z
     out["JT_p_value"] = jt_p
     out["Spearman_rho"] = sp_rho
     out["Spearman_p"] = sp_p
-    for t in tc.STAGE_ORDER:
-        out[f"Mean_{tc.STAGE_LABELS[t]}"] = gmeans[t]
-    out["Monotonic"] = monotonic
+    out = pd.concat([out, _stage_group_means(matrix, bio)], axis=1)
     out["JT_FDR"] = multipletests(out["JT_p_value"].values, method="fdr_bh")[1]
     out["Spearman_FDR"] = multipletests(out["Spearman_p"].values, method="fdr_bh")[1]
     out["Direction"] = np.where(out["Spearman_rho"] > 0, "Increasing",
@@ -262,14 +311,17 @@ def run_trend_test(matrix: pd.DataFrame, bio: pd.DataFrame, logger) -> pd.DataFr
 # 5. Figures (palette / layout mirrored from the reference project)
 # ══════════════════════════════════════════════════════════════════════════
 
-def plot_volcano(trend_df: pd.DataFrame, genotype: str, out_dir: str, logger):
+def plot_volcano(trend_df: pd.DataFrame, genotype: str, out_dir: str, logger, *,
+                 effect_col: str = "Spearman_rho", fdr_col: str = "JT_FDR",
+                 x_label: str = "Spearman rho (timepoint correlation)",
+                 method_label: str = "Jonckheere-Terpstra test across 8W → 10W → 12W → 14W"):
     df = trend_df.copy()
-    df["neg_log10_fdr"] = -np.log10(np.clip(df["JT_FDR"], 1e-300, None))
-    df["sig"] = df["JT_FDR"] < tc.FDR_THRESHOLD
+    df["neg_log10_fdr"] = -np.log10(np.clip(df[fdr_col], 1e-300, None))
+    df["sig"] = df[fdr_col] < tc.FDR_THRESHOLD
 
     fig, ax = plt.subplots(figsize=(8, 6))
     colors = np.where(df["sig"], "#e74c3c", "#a6a6a6")
-    ax.scatter(df["Spearman_rho"], df["neg_log10_fdr"], c=colors, s=45, alpha=0.85,
+    ax.scatter(df[effect_col], df["neg_log10_fdr"], c=colors, s=45, alpha=0.85,
               edgecolor="none")
     ax.axhline(-np.log10(tc.FDR_THRESHOLD), ls="--", color="#808080", lw=0.8)
     ax.axvline(0, color="#b3b3b3", lw=0.6)
@@ -278,7 +330,7 @@ def plot_volcano(trend_df: pd.DataFrame, genotype: str, out_dir: str, logger):
         label_df = df[df["sig"]]
     else:
         label_df = df.head(10)
-    texts = [ax.text(r["Spearman_rho"], r["neg_log10_fdr"], r["label"], fontsize=8)
+    texts = [ax.text(r[effect_col], r["neg_log10_fdr"], r["label"], fontsize=8)
             for _, r in label_df.iterrows()]
     if texts:
         adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle="-", color="#999999", lw=0.5))
@@ -287,10 +339,10 @@ def plot_volcano(trend_df: pd.DataFrame, genotype: str, out_dir: str, logger):
     handles = [Line2D([0], [0], marker="o", color="none", markerfacecolor=c, markersize=7,
                       label=l) for c, l in [("#e74c3c", "FDR < 0.05"), ("#a6a6a6", "FDR >= 0.05")]]
     ax.legend(handles=handles, title="Significance", loc="lower left", frameon=False, fontsize=9)
-    ax.set_xlabel("Spearman rho (timepoint correlation)")
+    ax.set_xlabel(x_label)
     ax.set_ylabel(r"$-\log_{10}$(FDR)")
     ax.set_title(f"Monotonic Trend Analysis — Mousebrain-elevated EV proteins ({genotype})\n"
-                f"Jonckheere-Terpstra test across 8W → 10W → 12W → 14W",
+                f"{method_label}",
                 fontsize=13, fontweight="bold")
     fig.tight_layout()
     p = os.path.join(out_dir, "trend_volcano.png")
@@ -305,21 +357,23 @@ def _heatmap_col_fun_r(ro):
     ro.r("hm_col_fun <- circlize::colorRamp2(hm_stops, hm_colors)")
 
 
-def plot_heatmap(trend_df: pd.DataFrame, genotype: str, out_dir: str, logger, top_n=30):
+def plot_heatmap(trend_df: pd.DataFrame, genotype: str, out_dir: str, logger, top_n=30, *,
+                 effect_col: str = "Spearman_rho", fdr_col: str = "JT_FDR",
+                 sort_label: str = "JT p-value"):
     sel = trend_df.head(min(top_n, len(trend_df))).copy()
     mean_cols = [f"Mean_{tc.STAGE_LABELS[t]}" for t in tc.STAGE_ORDER]
     gmean_mat = sel[mean_cols].values.astype(float)
     z = (gmean_mat - gmean_mat.mean(axis=1, keepdims=True)) / \
         (gmean_mat.std(axis=1, keepdims=True, ddof=0) + 1e-9)
 
-    sel = sel.assign(_z_order=sel["Spearman_rho"])
+    sel = sel.assign(_z_order=sel[effect_col])
     order = np.argsort(sel["_z_order"].values)
     z = z[order]
     sel = sel.iloc[order]
 
     row_labels = sel["label"].tolist()
     direction = sel["Direction"].tolist()
-    fdr_star = sel["JT_FDR"].map(tc.sig_star).tolist()
+    fdr_star = sel[fdr_col].map(tc.sig_star).tolist()
     col_labels = [tc.STAGE_LABELS[t] for t in tc.STAGE_ORDER]
 
     n = len(sel)
@@ -353,7 +407,7 @@ def plot_heatmap(trend_df: pd.DataFrame, genotype: str, out_dir: str, logger, to
     ro.r.assign("dev_w", float(dev_w))
     ro.r.assign("dev_h", float(dev_h))
     ro.r.assign("png_path", png_path)
-    ro.r.assign("title_txt", f"Mousebrain-elevated EV proteins ({genotype}) — top {n} by JT p-value")
+    ro.r.assign("title_txt", f"Mousebrain-elevated EV proteins ({genotype}) — top {n} by {sort_label}")
     ro.r('''
     suppressMessages({library(ComplexHeatmap); library(circlize); library(grid)})
     m <- matrix(z_vec, nrow = n_row, ncol = n_col)
@@ -411,16 +465,20 @@ def _finalize_grid_header(fig, fig_h_in: float, title_line: str, subtitle_line: 
              fontsize=9.5, color="#666666")
 
 
-def _select_box_ids(trend_df: pd.DataFrame, logger, genotype: str):
-    sig = trend_df[trend_df["JT_FDR"] < tc.FDR_THRESHOLD]
+def _select_box_ids(trend_df: pd.DataFrame, logger, genotype: str, *,
+                    fdr_col: str = "JT_FDR", sort_label: str = "JT p-value"):
+    """trend_df must already be sorted ascending by the p-value backing
+    `sort_label` (run_trend_test / run_genotype_interaction_test both do)."""
+    sig = trend_df[trend_df[fdr_col] < tc.FDR_THRESHOLD]
     if len(sig) > 0:
         return sig[config.ID_COL].tolist(), False
-    logger.info(f"[ev_trend] {genotype}: no protein with JT FDR<{tc.FDR_THRESHOLD}; "
-               f"plotting top 6 by JT p-value instead.")
+    logger.info(f"[ev_trend] {genotype}: no protein with {fdr_col}<{tc.FDR_THRESHOLD}; "
+               f"plotting top 6 by {sort_label} instead.")
     return trend_df.head(6)[config.ID_COL].tolist(), True
 
 
-def _make_box_jitter_ax(ax, values_by_stage: dict, gene_lab: str, subtitle: str):
+def _make_box_jitter_ax(ax, values_by_stage: dict, gene_lab: str, subtitle: str,
+                        value_label: str = "Normalized log2 ratio"):
     positions = list(range(1, len(tc.STAGE_ORDER) + 1))
     data = [values_by_stage[t] for t in tc.STAGE_ORDER]
     bp = ax.boxplot(data, positions=positions, widths=0.55, patch_artist=True,
@@ -444,7 +502,7 @@ def _make_box_jitter_ax(ax, values_by_stage: dict, gene_lab: str, subtitle: str)
 
     ax.set_xticks(positions)
     ax.set_xticklabels([tc.STAGE_LABELS[t] for t in tc.STAGE_ORDER], fontsize=9)
-    ax.set_ylabel("Normalized log2 ratio", fontsize=9)
+    ax.set_ylabel(value_label, fontsize=9)
     # `pad` (points) reserves headroom above the axes for the title; the
     # subtitle is offset from the axes edge in points too (not axes-fraction),
     # so the two never collide regardless of the figure's dpi or panel count —
@@ -456,7 +514,11 @@ def _make_box_jitter_ax(ax, values_by_stage: dict, gene_lab: str, subtitle: str)
                ha="center", va="bottom", fontsize=7.5, color="#666666")
 
 
-def plot_boxplots(matrix, bio, trend_df, genotype, out_dir, logger, ids, name, title):
+def plot_boxplots(matrix, bio, trend_df, genotype, out_dir, logger, ids, name, title,
+                  value_label: str = "Normalized log2 ratio", *,
+                  fdr_col: str = "JT_FDR", sig_col: str = "JT_sig",
+                  fdr_label: str = "JT FDR", effect_col: str = "Spearman_rho",
+                  effect_label: str = "rho"):
     if not ids:
         return
     sample_cols = bio["column_name"].tolist()
@@ -475,9 +537,9 @@ def plot_boxplots(matrix, bio, trend_df, genotype, out_dir, logger, ids, name, t
         r = row_by_id.loc[pid]
         values_by_stage = {t: row[sample_cols][stage_vec == t].values.astype(float)
                            for t in tc.STAGE_ORDER}
-        subtitle = (f"JT FDR={r['JT_FDR']:.4f}{r['JT_sig']} | rho={r['Spearman_rho']:.3f} | "
+        subtitle = (f"{fdr_label}={r[fdr_col]:.4f}{r[sig_col]} | {effect_label}={r[effect_col]:.3f} | "
                    f"{r['Direction']}")
-        _make_box_jitter_ax(ax, values_by_stage, r["label"], subtitle)
+        _make_box_jitter_ax(ax, values_by_stage, r["label"], subtitle, value_label=value_label)
     for j in range(n, nrow * ncol):
         axes[j // ncol][j % ncol].set_visible(False)
 
@@ -490,7 +552,10 @@ def plot_boxplots(matrix, bio, trend_df, genotype, out_dir, logger, ids, name, t
     logger.info(f"[ev_trend] {genotype}: saved {name}.png ({n} proteins)")
 
 
-def plot_mean_se_lines(matrix, bio, trend_df, genotype, out_dir, logger, ids):
+def plot_mean_se_lines(matrix, bio, trend_df, genotype, out_dir, logger, ids,
+                       value_label: str = "Mean normalized log2 ratio", *,
+                       effect_col: str = "Spearman_rho", effect_label: str = "rho",
+                       subtitle_line: str | None = None):
     if not ids:
         return
     sample_cols = bio["column_name"].tolist()
@@ -525,9 +590,9 @@ def plot_mean_se_lines(matrix, bio, trend_df, genotype, out_dir, logger, ids):
         ax.set_xticks(x)
         ax.set_xticklabels([tc.STAGE_LABELS[t] for t in tc.STAGE_ORDER], fontsize=9)
         ax.set_xlabel("Timepoint", fontsize=9)
-        ax.set_ylabel("Mean normalized log2 ratio", fontsize=9)
+        ax.set_ylabel(value_label, fontsize=9)
         ax.set_title(r["label"], fontsize=11, fontweight="bold", pad=20)
-        ax.annotate(f"rho={r['Spearman_rho']:.3f} | {r['Direction']}",
+        ax.annotate(f"{effect_label}={r[effect_col]:.3f} | {r['Direction']}",
                    xy=(0.5, 1.0), xycoords="axes fraction",
                    xytext=(0, 3), textcoords="offset points",
                    ha="center", va="bottom", fontsize=7.5, color="#666666")
@@ -536,7 +601,7 @@ def plot_mean_se_lines(matrix, bio, trend_df, genotype, out_dir, logger, ids):
 
     _finalize_grid_header(
         fig, fig_h, f"Mean ± SE Expression Across Timepoints ({genotype})",
-        f"Trend EV proteins (JT FDR < {tc.FDR_THRESHOLD})")
+        subtitle_line if subtitle_line is not None else f"Trend EV proteins (JT FDR < {tc.FDR_THRESHOLD})")
     p = os.path.join(out_dir, "trend_mean_se_lines.png")
     fig.savefig(p, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -544,10 +609,255 @@ def plot_mean_se_lines(matrix, bio, trend_df, genotype, out_dir, logger, ids):
 
 
 # ══════════════════════════════════════════════════════════════════════════
+# 7. KI/WT ratio trend analysis (genotype-contrast, same JT+Spearman method)
+# ══════════════════════════════════════════════════════════════════════════
+
+def build_ki_wt_ratio_matrix(wt_matrix, wt_bio, ki_matrix, ki_bio, logger):
+    """Convert signal intensity into a KI/WT ratio via ALL PAIRWISE replicate
+    combinations within each timepoint: for every protein and timepoint t,
+    every (WT_i(t), KI_j(t)) replicate pair yields one ratio value
+    KI_j(t) - WT_i(t) (log2 scale, so = log2(KI_j / WT_i)) — e.g. 8W WT (10
+    replicates) x 8W KI (10 replicates) = 100 pairwise ratio values at 8W.
+    This is the Hodges-Lehmann-style "all pairwise differences" construction
+    (same pairing the Mann-Whitney U / Jonckheere-Terpstra test itself
+    computes internally), and it's used here because WT and KI are
+    unpaired/independent mice — there is no natural 1:1 replicate pairing —
+    so every WT/KI combination at a timepoint is an equally valid ratio.
+
+    Caveat (documented, not hidden): pairwise combinations are NOT
+    independent observations (each real replicate contributes to many
+    pairs), so the resulting sample size per timepoint overstates the true
+    n. This inflates apparent test power somewhat; the reported n. per
+    timepoint should always be read as "instrument for computing an
+    all-pairs JT/Spearman location statistic," not as instrument
+    counts of independent biological replicates.
+
+    Only proteins detected + QC-surviving in BOTH branches can form a ratio.
+    Returns (ratio_matrix, ratio_bio) — ratio_bio describes the synthetic
+    pairwise "sample" columns (column_name, timepoint) the same way a real
+    bio table would, so run_trend_test/plotting need no special-casing.
+
+    Audit trail (validity/traceability of this construction step) is written
+    to branch/output/tsv/05_Imputed/KI_over_WT/:
+      candidate_status.tsv           — every WT-QC or KI-QC candidate protein,
+        whether it made it into the ratio (needs BOTH), and why not if not.
+      pairwise_design.tsv            — the literal (WT sample, KI sample) ->
+        synthetic ratio-column recipe for all 404 pairs, so any single ratio
+        value can be traced back to the exact two real replicates that made it.
+      replication_validity_summary.tsv — per timepoint: real WT/KI replicate
+        counts vs. the nominal pairwise count actually fed to the JT/Spearman
+        test, and the resulting pseudo-replication inflation factor — the
+        number a reviewer needs to judge how much this method's nominal n
+        overstates true biological replication (documented, not hidden, in
+        the function docstring above; this file makes it a checkable number).
+    """
+    wt_ids, ki_ids = set(wt_matrix[config.ID_COL]), set(ki_matrix[config.ID_COL])
+    common_ids = wt_ids & ki_ids
+    ki_sub = ki_matrix[ki_matrix[config.ID_COL].isin(common_ids)].reset_index(drop=True)
+    wt_indexed = wt_matrix.set_index(config.ID_COL)
+    ki_indexed = ki_sub.set_index(config.ID_COL)
+    ids_order = ki_sub[config.ID_COL].tolist()
+
+    audit_dir = tc.tsv_stage_dir(os.path.join(tc.STAGE_05_IMPUTED, "KI_over_WT"))
+
+    # ── Candidate status / validity table ────────────────────────────────
+    meta_cols = [config.ID_COL, "Gene", "Exosome_Classification", "label"]
+    combined_meta = pd.concat([wt_matrix[meta_cols], ki_matrix[meta_cols]]).drop_duplicates(
+        subset=[config.ID_COL]).reset_index(drop=True)
+    combined_meta["detected_WT_QC"] = combined_meta[config.ID_COL].isin(wt_ids)
+    combined_meta["detected_KI_QC"] = combined_meta[config.ID_COL].isin(ki_ids)
+    combined_meta["included_in_ratio"] = (combined_meta["detected_WT_QC"] &
+                                          combined_meta["detected_KI_QC"])
+    combined_meta["exclusion_reason"] = np.select(
+        [combined_meta["included_in_ratio"],
+         combined_meta["detected_WT_QC"] & ~combined_meta["detected_KI_QC"],
+         ~combined_meta["detected_WT_QC"] & combined_meta["detected_KI_QC"]],
+        ["", "WT_QC_only (no matching KI_QC measurement)", "KI_QC_only (no matching WT_QC measurement)"],
+        default="")
+    utils.save_tsv(combined_meta, audit_dir, "candidate_status")
+
+    # ── Pairwise design + per-timepoint replication validity ────────────────
+    id_cols = ki_sub[meta_cols].reset_index(drop=True)
+    bio_rows, design_rows, validity_rows = [], [], []
+    ratio_cols = {}
+    for t in tc.STAGE_ORDER:
+        wt_cols_t = wt_bio.loc[wt_bio["timepoint"].astype(int) == t, "column_name"].tolist()
+        ki_cols_t = ki_bio.loc[ki_bio["timepoint"].astype(int) == t, "column_name"].tolist()
+        wt_vals_t = wt_indexed.loc[ids_order, wt_cols_t].values   # n_proteins x n_wt_t
+        ki_vals_t = ki_indexed.loc[ids_order, ki_cols_t].values   # n_proteins x n_ki_t
+        for wi, wt_c in enumerate(wt_cols_t):
+            for kj, ki_c in enumerate(ki_cols_t):
+                col_name = f"ratio_{t}W_WT{wi + 1}_KI{kj + 1}"
+                ratio_cols[col_name] = ki_vals_t[:, kj] - wt_vals_t[:, wi]
+                bio_rows.append({"column_name": col_name, "timepoint": t})
+                design_rows.append({"ratio_column": col_name, "timepoint": tc.STAGE_LABELS[t],
+                                   "wt_sample_column": wt_c, "ki_sample_column": ki_c})
+        n_wt, n_ki = len(wt_cols_t), len(ki_cols_t)
+        n_pairwise = n_wt * n_ki
+        n_independent = n_wt + n_ki
+        validity_rows.append({
+            "timepoint": tc.STAGE_LABELS[t], "n_WT_replicates": n_wt, "n_KI_replicates": n_ki,
+            "n_pairwise_ratio_values": n_pairwise, "n_independent_replicates": n_independent,
+            "pseudoreplication_inflation_factor": round(n_pairwise / n_independent, 2),
+        })
+
+    utils.save_tsv(pd.DataFrame(design_rows), audit_dir, "pairwise_design")
+    utils.save_tsv(pd.DataFrame(validity_rows), audit_dir, "replication_validity_summary")
+
+    ratio_df = pd.concat([id_cols, pd.DataFrame(ratio_cols)], axis=1)
+    ratio_bio = pd.DataFrame(bio_rows)
+    n_pairs_by_stage = {r["timepoint"]: r["n_pairwise_ratio_values"] for r in validity_rows}
+    logger.info(f"[ev_trend] KI/WT ratio: {len(common_ids)}/{len(wt_ids | ki_ids)} candidate "
+               f"proteins detected + QC-surviving in BOTH branches "
+               f"({len(wt_ids - ki_ids)} WT-only + {len(ki_ids - wt_ids)} KI-only excluded); "
+               f"all-pairwise WTxKI ratio per timepoint: "
+               + ", ".join(f"{lbl}={n}" for lbl, n in n_pairs_by_stage.items())
+               + f" ({len(ratio_bio)} total pairwise ratio values per protein).")
+    logger.info(f"[ev_trend] KI/WT ratio audit trail -> {audit_dir}/ "
+               f"(candidate_status.tsv, pairwise_design.tsv, replication_validity_summary.tsv)")
+    return ratio_df, ratio_bio
+
+
+def run_genotype_interaction_test(wt_matrix, wt_bio, ki_matrix, ki_bio, common_ids, logger):
+    """The methodologically correct way to test "does the KI-vs-WT
+    difference itself change over time": fit ONE limma linear model per
+    protein on the REAL, un-expanded sample-level data —
+        value ~ genotype * week (+ peptide_ug)
+    — and test the genotype:week INTERACTION coefficient. This uses the
+    true n (e.g. 10 WT + 10 KI = 20 independent mice at 8W, not the 100
+    pairwise pseudo-replicates build_ki_wt_ratio_matrix constructs for
+    visualization), so eBayes/topTable's p-values are not anti-conservative
+    the way running JT/Spearman on the pairwise-expanded ratio matrix would
+    be (JT's own variance formula already assumes independent pairs; feeding
+    it pre-expanded pairwise differences double-counts that structure and
+    inflates apparent significance — confirmed empirically: the JT-on-
+    pairwise-ratio version flagged 27/75 proteins vs ~1/78 and 1/76 in the
+    WT-only/KI-only branches, an implausible jump).
+
+    Same limma machinery as step06_dep_limma / step09_trend_timeseries
+    (this project's own established DEP/trend-testing pattern), just with a
+    genotype*week design instead of ~0+group or ~week.
+    """
+    meta_cols = [config.ID_COL, "Gene", "Exosome_Classification", "label"]
+    id_meta = wt_matrix[wt_matrix[config.ID_COL].isin(common_ids)][meta_cols].drop_duplicates(
+        subset=[config.ID_COL]).reset_index(drop=True)
+    ids_order = id_meta[config.ID_COL].tolist()
+
+    wt_sample_cols = wt_bio["column_name"].tolist()
+    ki_sample_cols = ki_bio["column_name"].tolist()
+    wt_vals = wt_matrix.set_index(config.ID_COL).loc[ids_order, wt_sample_cols].values.astype(float)
+    ki_vals = ki_matrix.set_index(config.ID_COL).loc[ids_order, ki_sample_cols].values.astype(float)
+    expr = np.hstack([wt_vals, ki_vals])   # n_proteins x (n_wt_total + n_ki_total), REAL replicates only
+
+    genotype_vec = ["WT"] * len(wt_sample_cols) + ["KI"] * len(ki_sample_cols)
+    week_vec = (wt_bio.set_index("column_name").loc[wt_sample_cols, "timepoint"].astype(float).tolist() +
+               ki_bio.set_index("column_name").loc[ki_sample_cols, "timepoint"].astype(float).tolist())
+    pep_wt = pd.to_numeric(wt_bio.set_index("column_name").loc[wt_sample_cols, config.PEPTIDE_COL],
+                          errors="coerce")
+    pep_ki = pd.to_numeric(ki_bio.set_index("column_name").loc[ki_sample_cols, config.PEPTIDE_COL],
+                          errors="coerce")
+    pep_vec = pd.concat([pep_wt, pep_ki]).values.astype(float)
+
+    ro, _ = _init_rpy2()
+    ro.r.assign("expr_mat", ro.r["matrix"](ro.FloatVector(expr.flatten("F")), nrow=expr.shape[0]))
+    ro.r.assign("genotype", ro.FactorVector(genotype_vec, levels=ro.StrVector(["WT", "KI"])))
+    ro.r.assign("week", ro.FloatVector(week_vec))
+    use_pep = config.USE_PEPTIDE_COVARIATE and np.isfinite(pep_vec).all()
+    if use_pep:
+        ro.r.assign("pep", ro.FloatVector(pep_vec))
+        ro.r("design <- model.matrix(~ genotype * week + pep)")
+    else:
+        ro.r("design <- model.matrix(~ genotype * week)")
+    ro.r("""
+    fit <- eBayes(lmFit(expr_mat, design), trend=TRUE, robust=TRUE)
+    tt  <- topTable(fit, coef="genotypeKI:week", number=Inf, sort.by="none", adjust.method="BH")
+    """)
+    tt = ro.r["tt"]
+    if isinstance(tt, pd.DataFrame):
+        stats = tt[["logFC", "t", "P.Value", "adj.P.Val"]].reset_index(drop=True)
+    else:
+        stats = pd.DataFrame({k: np.asarray(tt.rx2(k), dtype=float) for k in
+                              ["logFC", "t", "P.Value", "adj.P.Val"]})
+    stats.columns = ["Interaction_slope", "Interaction_t", "Interaction_P", "Interaction_FDR"]
+
+    result = pd.concat([id_meta, stats], axis=1)
+    result["Interaction_sig"] = result["Interaction_FDR"].map(tc.sig_star)
+    result["Direction"] = np.where(result["Interaction_slope"] > 0, "Increasing",
+                                   np.where(result["Interaction_slope"] < 0, "Decreasing", "Flat"))
+    result = result.sort_values("Interaction_P").reset_index(drop=True)
+
+    n_sig = int((result["Interaction_FDR"] < tc.FDR_THRESHOLD).sum())
+    logger.info(f"[ev_trend] genotype x week interaction (limma; peptide covariate={use_pep}; "
+               f"real n={expr.shape[1]} samples [{len(wt_sample_cols)} WT + {len(ki_sample_cols)} KI], "
+               f"NO pairwise expansion): {len(result)} proteins tested; "
+               f"{n_sig} significant (interaction FDR<{tc.FDR_THRESHOLD}).")
+    return result
+
+
+def run_ki_wt_ratio_analysis(wt_matrix, wt_bio, ki_matrix, ki_bio, logger):
+    label = "KI_over_WT"
+    display = "KI/WT ratio"
+    ratio_matrix, ratio_bio = build_ki_wt_ratio_matrix(wt_matrix, wt_bio, ki_matrix, ki_bio, logger)
+
+    stage5_dir = tc.tsv_stage_dir(tc.STAGE_05_IMPUTED)
+    utils.save_tsv(ratio_matrix, stage5_dir, f"{label}_ev_subset_ratio")
+
+    if len(ratio_matrix) < 4:
+        logger.warning(f"[ev_trend] {label}: only {len(ratio_matrix)} proteins have both WT and "
+                      f"KI QC-surviving data — too few for trend testing; skipping.")
+        return pd.DataFrame()
+
+    common_ids = ratio_matrix[config.ID_COL].tolist()
+    interaction_df = run_genotype_interaction_test(wt_matrix, wt_bio, ki_matrix, ki_bio,
+                                                    common_ids, logger)
+
+    # Descriptive per-timepoint group means of the pairwise ratio distribution
+    # (visualization only — NOT the significance test; see run_trend_test's
+    # docstring on why JT/Spearman must not run on this pairwise-expanded
+    # matrix). By linearity these means equal mean(KI)-mean(WT) per timepoint
+    # regardless of the pairwise expansion, so they remain a faithful summary.
+    stage_means = _stage_group_means(ratio_matrix, ratio_bio)
+    trend_df = pd.concat([interaction_df, stage_means], axis=1)
+    utils.save_tsv(trend_df, tc.RESULTS_DIR, f"trend_test_results_{label}")
+
+    fig_dir = tc.figures_stage_dir(tc.STAGE_02_TREND, label)
+    value_label = "log2(KI/WT) ratio"
+    stat_kwargs = dict(effect_col="Interaction_slope", fdr_col="Interaction_FDR")
+    plot_volcano(trend_df, display, fig_dir, logger, **stat_kwargs,
+                x_label="Interaction slope (Δlog2(KI/WT) per week, limma)",
+                method_label="genotype × week interaction (limma, real n — no pairwise expansion)")
+    plot_heatmap(trend_df, display, fig_dir, logger, **stat_kwargs,
+                sort_label="interaction P-value")
+
+    sig_ids, is_fallback = _select_box_ids(trend_df, logger, display, fdr_col="Interaction_FDR",
+                                           sort_label="interaction P-value")
+    box_title = (f"Timepoint Trend — {'Significant' if not is_fallback else 'Top'} "
+               f"EV Proteins ({display})")
+    box_kwargs = dict(fdr_col="Interaction_FDR", sig_col="Interaction_sig", fdr_label="Interaction FDR",
+                      effect_col="Interaction_slope", effect_label="slope/week")
+    plot_boxplots(ratio_matrix, ratio_bio, trend_df, display, fig_dir, logger, sig_ids,
+                 "trend_boxplots_significant", box_title, value_label=value_label, **box_kwargs)
+
+    top_ids = trend_df.head(20)[config.ID_COL].tolist()
+    plot_boxplots(ratio_matrix, ratio_bio, trend_df, display, fig_dir, logger, top_ids,
+                 "trend_boxplots_top",
+                 f"Timepoint Trend — Top {len(top_ids)} EV Proteins by Interaction P-value ({display})",
+                 value_label=value_label, **box_kwargs)
+
+    plot_mean_se_lines(ratio_matrix, ratio_bio, trend_df, display, fig_dir, logger, sig_ids,
+                       value_label=f"Mean {value_label}", effect_col="Interaction_slope",
+                       effect_label="slope/week",
+                       subtitle_line=f"Trend EV proteins (genotype × week interaction FDR < {tc.FDR_THRESHOLD})")
+
+    trend_df.insert(0, "Genotype", label)
+    return trend_df
+
+
+# ══════════════════════════════════════════════════════════════════════════
 # Main
 # ══════════════════════════════════════════════════════════════════════════
 
-def run_genotype(genotype: str, candidates: pd.DataFrame, logger) -> pd.DataFrame:
+def run_genotype(genotype: str, candidates: pd.DataFrame, logger):
     logger.info(f"\n{'=' * 70}\n[ev_trend] Branch: {genotype}\n{'=' * 70}")
     utils.apply_style()
 
@@ -579,7 +889,7 @@ def run_genotype(genotype: str, candidates: pd.DataFrame, logger) -> pd.DataFram
     if len(matrix) < 4:
         logger.warning(f"[ev_trend] {genotype}: only {len(matrix)} EV proteins survive QC — "
                       f"too few for trend testing; skipping.")
-        return pd.DataFrame()
+        return pd.DataFrame(), matrix, bio
 
     trend_df = run_trend_test(matrix, bio, logger)
     utils.save_tsv(trend_df, tc.RESULTS_DIR, f"trend_test_results_{genotype}")
@@ -609,7 +919,7 @@ def run_genotype(genotype: str, candidates: pd.DataFrame, logger) -> pd.DataFram
     plot_mean_se_lines(matrix, bio, trend_df, genotype, fig_dir, logger, sig_ids)
 
     trend_df.insert(0, "Genotype", genotype)
-    return trend_df
+    return trend_df, matrix, bio
 
 
 def main():
@@ -620,11 +930,20 @@ def main():
     candidates = build_candidate_list(logger)
 
     all_trend = []
-    coverage_rows = []
+    matrix_by_genotype = {}
     for genotype in tc.GENOTYPES:
-        trend_df = run_genotype(genotype, candidates, logger)
+        trend_df, matrix, bio = run_genotype(genotype, candidates, logger)
+        matrix_by_genotype[genotype] = (matrix, bio)
         if not trend_df.empty:
             all_trend.append(trend_df)
+
+    # ── KI/WT ratio trend analysis (Task: signal intensity -> KI/WT ratio) ──
+    logger.info(f"\n{'=' * 70}\n[ev_trend] Branch: KI/WT ratio\n{'=' * 70}")
+    wt_matrix, wt_bio = matrix_by_genotype["WT"]
+    ki_matrix, ki_bio = matrix_by_genotype["KI"]
+    ratio_trend_df = run_ki_wt_ratio_analysis(wt_matrix, wt_bio, ki_matrix, ki_bio, logger)
+    if not ratio_trend_df.empty:
+        all_trend.append(ratio_trend_df)
 
     if all_trend:
         combined = pd.concat(all_trend, ignore_index=True)
