@@ -8,9 +8,5 @@ __pycache__/
 output_data/
 output_data.zip
 
-# EV-trend branch pipeline outputs — regenerable via
-# `python3 branch/scripts/run_ev_trend_analysis.py`.
-branch/output/
-
 # macOS
 .DS_Store
