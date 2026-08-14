@@ -256,9 +256,18 @@ def plot_candidate_coverage_funnel(n_total, n_raw, n_wt, n_ki, logger):
 
 def _stage_group_means(matrix: pd.DataFrame, bio: pd.DataFrame) -> pd.DataFrame:
     """Per-protein group mean at each ordered timepoint + a simple monotonic-
-    ity flag. Used both by run_trend_test (WT/KI branches) and by the
-    genotype-interaction analysis (descriptive-only there — see its own
-    significance test)."""
+    ity flag, keyed by config.ID_COL. Used both by run_trend_test (WT/KI
+    branches) and by the genotype-interaction analysis (descriptive-only
+    there — see its own significance test).
+
+    Returns a DataFrame carrying config.ID_COL so callers MUST merge on it
+    (never pd.concat(axis=1) positionally) — `matrix`'s row order is not
+    guaranteed to match whatever order the caller's own results end up in
+    (e.g. run_genotype_interaction_test sorts its output by p-value before
+    returning; a positional concat against this function's un-sorted output
+    silently pastes one protein's stage means onto a different protein's
+    row — this exact bug produced a mismatched KI_over_WT heatmap/line-plot
+    pair, caught 2026-08-14: NMB's row carried DSP's Mean_8W..14W)."""
     sample_cols = bio["column_name"].tolist()
     stage_vec = bio.set_index("column_name").loc[sample_cols, "timepoint"].astype(int).values
     vals = matrix[sample_cols].values.astype(float)
@@ -266,7 +275,9 @@ def _stage_group_means(matrix: pd.DataFrame, bio: pd.DataFrame) -> pd.DataFrame:
     gmean_mat = np.column_stack([gmeans[t] for t in tc.STAGE_ORDER])
     diffs = np.diff(gmean_mat, axis=1)
     monotonic = np.all(diffs >= 0, axis=1) | np.all(diffs <= 0, axis=1)
-    out = pd.DataFrame({f"Mean_{tc.STAGE_LABELS[t]}": gmeans[t] for t in tc.STAGE_ORDER})
+    out = pd.DataFrame({config.ID_COL: matrix[config.ID_COL].values})
+    for t in tc.STAGE_ORDER:
+        out[f"Mean_{tc.STAGE_LABELS[t]}"] = gmeans[t]
     out["Monotonic"] = monotonic
     return out
 
@@ -296,7 +307,7 @@ def run_trend_test(matrix: pd.DataFrame, bio: pd.DataFrame, logger) -> pd.DataFr
     out["JT_p_value"] = jt_p
     out["Spearman_rho"] = sp_rho
     out["Spearman_p"] = sp_p
-    out = pd.concat([out, _stage_group_means(matrix, bio)], axis=1)
+    out = out.merge(_stage_group_means(matrix, bio), on=config.ID_COL, how="left")
     out["JT_FDR"] = multipletests(out["JT_p_value"].values, method="fdr_bh")[1]
     out["Spearman_FDR"] = multipletests(out["Spearman_p"].values, method="fdr_bh")[1]
     out["Direction"] = np.where(out["Spearman_rho"] > 0, "Increasing",
@@ -817,7 +828,7 @@ def run_ki_wt_ratio_analysis(wt_matrix, wt_bio, ki_matrix, ki_bio, logger):
     # matrix). By linearity these means equal mean(KI)-mean(WT) per timepoint
     # regardless of the pairwise expansion, so they remain a faithful summary.
     stage_means = _stage_group_means(ratio_matrix, ratio_bio)
-    trend_df = pd.concat([interaction_df, stage_means], axis=1)
+    trend_df = interaction_df.merge(stage_means, on=config.ID_COL, how="left")
     utils.save_tsv(trend_df, tc.RESULTS_DIR, f"trend_test_results_{label}")
 
     fig_dir = tc.figures_stage_dir(tc.STAGE_02_TREND, label)
